@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TokenWatch Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3a;
+    --text: #e4e4e7; --muted: #71717a; --accent: #818cf8;
+    --green: #34d399; --red: #f87171; --yellow: #fbbf24;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Segoe UI', Roboto, monospace; background: var(--bg); color: var(--text); padding: 24px; }
+  h1 { font-size: 1.5rem; margin-bottom: 8px; }
+  .subtitle { color: var(--muted); font-size: 0.85rem; margin-bottom: 24px; }
+  .stats-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px; margin-bottom: 24px;
+  }
+  .stat-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px;
+  }
+  .stat-label { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat-value { font-size: 1.5rem; font-weight: 700; margin-top: 4px; }
+  .charts-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 24px; }
+  .chart-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px;
+  }
+  .chart-title { font-size: 0.9rem; font-weight: 600; margin-bottom: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th { text-align: left; color: var(--muted); font-weight: 500; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  tr:hover { background: rgba(129, 140, 248, 0.05); }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 0.75rem; font-weight: 500;
+  }
+  .badge-anthropic { background: rgba(129, 140, 248, 0.15); color: var(--accent); }
+  .badge-openai { background: rgba(52, 211, 153, 0.15); color: var(--green); }
+  .timeframe-btns { margin-bottom: 16px; display: flex; gap: 8px; }
+  .timeframe-btns button {
+    background: var(--surface); border: 1px solid var(--border); color: var(--text);
+    padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 0.8rem;
+  }
+  .timeframe-btns button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  @media (max-width: 768px) { .charts-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<h1>TokenWatch</h1>
+<p class="subtitle">Real-time API token usage monitor</p>
+
+<div class="timeframe-btns">
+  <button class="active" data-tf="1h">1H</button>
+  <button data-tf="24h">24H</button>
+  <button data-tf="7d">7D</button>
+  <button data-tf="30d">30D</button>
+  <button data-tf="all">All</button>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card"><div class="stat-label">Total Requests</div><div class="stat-value" id="total-requests">0</div></div>
+  <div class="stat-card"><div class="stat-label">Input Tokens</div><div class="stat-value" id="total-input">0</div></div>
+  <div class="stat-card"><div class="stat-label">Output Tokens</div><div class="stat-value" id="total-output">0</div></div>
+  <div class="stat-card"><div class="stat-label">Estimated Cost</div><div class="stat-value" id="total-cost">$0.00</div></div>
+  <div class="stat-card"><div class="stat-label">Cache Read Tokens</div><div class="stat-value" id="total-cache-read">0</div></div>
+</div>
+
+<div class="charts-grid">
+  <div class="chart-card">
+    <div class="chart-title">Tokens Over Time</div>
+    <canvas id="timeChart" height="200"></canvas>
+  </div>
+  <div class="chart-card">
+    <div class="chart-title">Tokens by Model</div>
+    <canvas id="modelChart" height="200"></canvas>
+  </div>
+</div>
+
+<div class="chart-card">
+  <div class="chart-title">Recent Requests</div>
+  <table>
+    <thead><tr>
+      <th>Time</th><th>API</th><th>Model</th><th>Input</th><th>Output</th><th>Latency</th><th>Cost</th><th>Source</th>
+    </tr></thead>
+    <tbody id="requests-table"></tbody>
+  </table>
+</div>
+
+<script>
+let currentTimeframe = '1h';
+const fmt = n => n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'K' : n.toString();
+
+const colors = ['#818cf8','#34d399','#fbbf24','#f87171','#a78bfa','#fb923c','#38bdf8','#f472b6'];
+
+let timeChart, modelChart;
+
+function initCharts() {
+  const chartOpts = { responsive: true, plugins: { legend: { labels: { color: '#71717a' } } }, scales: {
+    x: { ticks: { color: '#71717a' }, grid: { color: '#2a2d3a' } },
+    y: { ticks: { color: '#71717a' }, grid: { color: '#2a2d3a' } }
+  }};
+  timeChart = new Chart(document.getElementById('timeChart'), {
+    type: 'line', data: { labels: [], datasets: [
+      { label: 'Input', data: [], borderColor: '#818cf8', tension: 0.3, fill: false },
+      { label: 'Output', data: [], borderColor: '#34d399', tension: 0.3, fill: false },
+    ]}, options: chartOpts,
+  });
+  modelChart = new Chart(document.getElementById('modelChart'), {
+    type: 'doughnut', data: { labels: [], datasets: [{ data: [], backgroundColor: colors }] },
+    options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { color: '#71717a' } } } },
+  });
+}
+
+async function refresh() {
+  try {
+    const [statsRes, recentRes, tsRes] = await Promise.all([
+      fetch(`/api/stats?timeframe=${currentTimeframe}`),
+      fetch('/api/recent?limit=30'),
+      fetch(`/api/timeseries?timeframe=${currentTimeframe}`),
+    ]);
+    const stats = await statsRes.json();
+    const recent = await recentRes.json();
+    const ts = await tsRes.json();
+
+    document.getElementById('total-requests').textContent = fmt(stats.total_requests);
+    document.getElementById('total-input').textContent = fmt(stats.total_input_tokens);
+    document.getElementById('total-output').textContent = fmt(stats.total_output_tokens);
+    document.getElementById('total-cost').textContent = '$' + stats.total_estimated_cost.toFixed(4);
+    document.getElementById('total-cache-read').textContent = fmt(stats.total_cache_read_tokens);
+
+    // Time chart
+    timeChart.data.labels = ts.map(t => t.bucket.split('T')[1] || t.bucket);
+    timeChart.data.datasets[0].data = ts.map(t => t.input_tokens);
+    timeChart.data.datasets[1].data = ts.map(t => t.output_tokens);
+    timeChart.update();
+
+    // Model chart
+    const models = Object.entries(stats.models);
+    modelChart.data.labels = models.map(([m]) => m);
+    modelChart.data.datasets[0].data = models.map(([, v]) => v.input_tokens + v.output_tokens);
+    modelChart.update();
+
+    // Recent table
+    const tbody = document.getElementById('requests-table');
+    tbody.innerHTML = recent.map(r => `<tr>
+      <td>${new Date(r.created_at).toLocaleTimeString()}</td>
+      <td><span class="badge badge-${r.api_type}">${r.api_type}</span></td>
+      <td>${r.model}</td>
+      <td>${fmt(r.input_tokens)}</td>
+      <td>${fmt(r.output_tokens)}</td>
+      <td>${r.latency_ms}ms</td>
+      <td>${r.estimated_cost != null ? '$'+r.estimated_cost.toFixed(4) : '-'}</td>
+      <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.source_app}">${r.source_app.slice(0,30)}</td>
+    </tr>`).join('');
+  } catch(e) { console.error('Refresh failed:', e); }
+}
+
+document.querySelectorAll('.timeframe-btns button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelector('.timeframe-btns .active').classList.remove('active');
+    btn.classList.add('active');
+    currentTimeframe = btn.dataset.tf;
+    refresh();
+  });
+});
+
+initCharts();
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>
