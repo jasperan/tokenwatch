@@ -1,5 +1,10 @@
 # TokenWatch
 
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg?style=for-the-badge)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
+![SQLite](https://img.shields.io/badge/storage-SQLite-003B57.svg?style=for-the-badge&logo=sqlite&logoColor=white)
+![Proxy](https://img.shields.io/badge/type-API_Proxy-orange?style=for-the-badge)
+
 Real-time API token usage proxy for Anthropic and OpenAI-compatible endpoints.
 
 TokenWatch sits between your AI tools and upstream APIs, transparently logging token usage, costs, and latency to a local SQLite database. It provides both a CLI and web dashboard for monitoring.
@@ -71,3 +76,12 @@ Open `http://localhost:8878` for a real-time dashboard with:
 Built-in pricing for:
 - Claude Opus 4.6, Sonnet 4.5, Haiku 4.5
 - GLM-4.7, GLM-4.7-Flash
+
+---
+
+<div align="center">
+
+[![GitHub](https://img.shields.io/badge/GitHub-jasperan-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/jasperan)&nbsp;
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-jasperan-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/jasperan/)
+
+</div>
