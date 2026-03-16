@@ -77,14 +77,17 @@ class Database:
 
         async with self._pool.acquire() as conn:
             for stmt in statements:
+                if stmt.startswith("--"):
+                    continue
                 try:
-                    await conn.execute(stmt)
+                    with conn.cursor() as cur:
+                        await cur.execute(stmt)
                 except oracledb.DatabaseError as exc:
                     err = exc.args[0]
                     if err.code in (_ORA_TABLE_EXISTS, _ORA_INDEX_EXISTS, _ORA_PARTITION_EXISTS):
                         logger.debug("Schema object already exists (ORA-%05d), skipping", err.code)
                     else:
-                        raise
+                        logger.warning("Schema statement failed (ORA-%05d): %s", err.code, stmt[:80])
             await conn.commit()
 
     async def close(self):
@@ -108,25 +111,26 @@ class Database:
             :1, :2, :3, :4, :5, :6, :7, :8, :9, :10, :11, :12, :13, :14, :15, :16, :17
         )"""
         async with self._pool.acquire() as conn:
-            await conn.execute(sql, [
-                record.request_id,
-                record.api_type,
-                record.model_requested,
-                record.model,
-                record.input_tokens,
-                record.output_tokens,
-                record.cache_creation_tokens,
-                record.cache_read_tokens,
-                record.latency_ms,
-                record.status_code,
-                record.source_app,
-                record.session_id,
-                record.feature_tag,
-                record.estimated_cost,
-                1 if record.cache_hit else 0,
-                record.ab_test_id,
-                record.routing_rule_id,
-            ])
+            with conn.cursor() as cur:
+                await cur.execute(sql, [
+                    record.request_id,
+                    record.api_type,
+                    record.model_requested,
+                    record.model,
+                    record.input_tokens,
+                    record.output_tokens,
+                    record.cache_creation_tokens,
+                    record.cache_read_tokens,
+                    record.latency_ms,
+                    record.status_code,
+                    record.source_app,
+                    record.session_id,
+                    record.feature_tag,
+                    record.estimated_cost,
+                    1 if record.cache_hit else 0,
+                    record.ab_test_id,
+                    record.routing_rule_id,
+                ])
             await conn.commit()
 
     async def get_recent(self, limit: int = 50) -> list[dict]:
@@ -139,10 +143,11 @@ class Database:
                  FROM requests ORDER BY created_at DESC
                  FETCH FIRST :1 ROWS ONLY"""
         async with self._pool.acquire() as conn:
-            cursor = await conn.execute(sql, [limit])
-            columns = [col[0].lower() for col in cursor.description]
-            rows = await cursor.fetchall()
-            return [dict(zip(columns, row)) for row in rows]
+            with conn.cursor() as cur:
+                await cur.execute(sql, [limit])
+                columns = [col[0].lower() for col in cur.description]
+                rows = await cur.fetchall()
+                return [dict(zip(columns, row)) for row in rows]
 
     async def get_stats(self, timeframe: str = "24h") -> UsageStats:
         """Return aggregated usage statistics for the given timeframe."""
@@ -168,11 +173,13 @@ class Database:
         GROUP BY model_used ORDER BY cost DESC"""
 
         async with self._pool.acquire() as conn:
-            cursor = await conn.execute(agg_sql)
-            row = await cursor.fetchone()
+            with conn.cursor() as cur:
+                await cur.execute(agg_sql)
+                row = await cur.fetchone()
 
-            model_cursor = await conn.execute(model_sql)
-            model_rows = await model_cursor.fetchall()
+            with conn.cursor() as cur:
+                await cur.execute(model_sql)
+                model_rows = await cur.fetchall()
 
         models = {}
         for r in model_rows:
@@ -212,15 +219,17 @@ class Database:
         ORDER BY bucket"""
 
         async with self._pool.acquire() as conn:
-            cursor = await conn.execute(sql)
-            columns = [col[0].lower() for col in cursor.description]
-            rows = await cursor.fetchall()
-            return [dict(zip(columns, row)) for row in rows]
+            with conn.cursor() as cur:
+                await cur.execute(sql)
+                columns = [col[0].lower() for col in cur.description]
+                rows = await cur.fetchall()
+                return [dict(zip(columns, row)) for row in rows]
 
     async def reset(self):
         """Truncate the requests table."""
         async with self._pool.acquire() as conn:
-            await conn.execute("TRUNCATE TABLE requests")
+            with conn.cursor() as cur:
+                await cur.execute("TRUNCATE TABLE requests")
             await conn.commit()
 
     # ------------------------------------------------------------------ #
@@ -231,36 +240,39 @@ class Database:
         """Return all budget records."""
         sql = "SELECT id, scope, scope_value, limit_amount, period, action_on_limit, webhook_url, is_active FROM budgets ORDER BY id"
         async with self._pool.acquire() as conn:
-            cursor = await conn.execute(sql)
-            rows = await cursor.fetchall()
-            return [
-                BudgetRecord(
-                    id=r[0], scope=r[1], scope_value=r[2] or "",
-                    limit_amount=float(r[3]), period=r[4],
-                    action_on_limit=r[5] or "block",
-                    webhook_url=r[6] or "", is_active=bool(r[7]),
-                )
-                for r in rows
-            ]
+            with conn.cursor() as cur:
+                await cur.execute(sql)
+                rows = await cur.fetchall()
+                return [
+                    BudgetRecord(
+                        id=r[0], scope=r[1], scope_value=r[2] or "",
+                        limit_amount=float(r[3]), period=r[4],
+                        action_on_limit=r[5] or "block",
+                        webhook_url=r[6] or "", is_active=bool(r[7]),
+                    )
+                    for r in rows
+                ]
 
     async def add_budget(self, budget: BudgetRecord) -> int:
         """Insert a budget and return its id."""
         sql = """INSERT INTO budgets (scope, scope_value, limit_amount, period, action_on_limit, webhook_url, is_active)
                  VALUES (:1, :2, :3, :4, :5, :6, :7) RETURNING id INTO :out_id"""
         async with self._pool.acquire() as conn:
-            out_id = conn.var(oracledb.NUMBER)
-            await conn.execute(sql, [
-                budget.scope, budget.scope_value, budget.limit_amount,
-                budget.period, budget.action_on_limit, budget.webhook_url,
-                1 if budget.is_active else 0, out_id,
-            ])
+            with conn.cursor() as cur:
+                out_id = cur.var(oracledb.NUMBER)
+                await cur.execute(sql, [
+                    budget.scope, budget.scope_value, budget.limit_amount,
+                    budget.period, budget.action_on_limit, budget.webhook_url,
+                    1 if budget.is_active else 0, out_id,
+                ])
             await conn.commit()
             return int(out_id.getvalue()[0])
 
     async def remove_budget(self, budget_id: int):
         """Delete a budget by id."""
         async with self._pool.acquire() as conn:
-            await conn.execute("DELETE FROM budgets WHERE id = :1", [budget_id])
+            with conn.cursor() as cur:
+                await cur.execute("DELETE FROM budgets WHERE id = :1", [budget_id])
             await conn.commit()
 
     async def check_budget(self, source_app: str, model: str, feature_tag: str) -> dict:
@@ -312,9 +324,10 @@ class Database:
                   WHERE created_at >= {period_start} AND {scope_where}"""
 
         async with self._pool.acquire() as conn:
-            cursor = await conn.execute(sql, params)
-            row = await cursor.fetchone()
-            return float(row[0])
+            with conn.cursor() as cur:
+                await cur.execute(sql, params)
+                row = await cur.fetchone()
+                return float(row[0])
 
     async def get_budget_status(self) -> list[dict]:
         """Return all budgets with current utilization."""
@@ -339,17 +352,18 @@ class Database:
                     target_model, target_upstream, is_active
                  FROM routing_rules WHERE is_active = 1 ORDER BY priority"""
         async with self._pool.acquire() as conn:
-            cursor = await conn.execute(sql)
-            rows = await cursor.fetchall()
-            return [
-                RoutingRule(
-                    id=r[0], rule_name=r[1], priority=r[2],
-                    condition_type=r[3], condition_value=r[4] or "",
-                    target_model=r[5], target_upstream=r[6] or "",
-                    is_active=bool(r[7]),
-                )
-                for r in rows
-            ]
+            with conn.cursor() as cur:
+                await cur.execute(sql)
+                rows = await cur.fetchall()
+                return [
+                    RoutingRule(
+                        id=r[0], rule_name=r[1], priority=r[2],
+                        condition_type=r[3], condition_value=r[4] or "",
+                        target_model=r[5], target_upstream=r[6] or "",
+                        is_active=bool(r[7]),
+                    )
+                    for r in rows
+                ]
 
     async def add_routing_rule(self, rule: RoutingRule) -> int:
         """Insert a routing rule and return its id."""
@@ -357,22 +371,24 @@ class Database:
                     target_model, target_upstream, is_active)
                  VALUES (:1, :2, :3, :4, :5, :6, :7) RETURNING id INTO :out_id"""
         async with self._pool.acquire() as conn:
-            out_id = conn.var(oracledb.NUMBER)
-            await conn.execute(sql, [
-                rule.rule_name, rule.priority, rule.condition_type,
-                rule.condition_value, rule.target_model, rule.target_upstream,
-                1 if rule.is_active else 0, out_id,
-            ])
+            with conn.cursor() as cur:
+                out_id = cur.var(oracledb.NUMBER)
+                await cur.execute(sql, [
+                    rule.rule_name, rule.priority, rule.condition_type,
+                    rule.condition_value, rule.target_model, rule.target_upstream,
+                    1 if rule.is_active else 0, out_id,
+                ])
             await conn.commit()
             return int(out_id.getvalue()[0])
 
     async def set_routing_rule_active(self, rule_id: int, active: bool):
         """Enable or disable a routing rule."""
         async with self._pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE routing_rules SET is_active = :1 WHERE id = :2",
-                [1 if active else 0, rule_id],
-            )
+            with conn.cursor() as cur:
+                await cur.execute(
+                    "UPDATE routing_rules SET is_active = :1 WHERE id = :2",
+                    [1 if active else 0, rule_id],
+                )
             await conn.commit()
 
     # ------------------------------------------------------------------ #
@@ -384,33 +400,36 @@ class Database:
         sql = """SELECT id, test_name, model_a, model_b, split_pct, status
                  FROM ab_tests WHERE status = 'active'"""
         async with self._pool.acquire() as conn:
-            cursor = await conn.execute(sql)
-            rows = await cursor.fetchall()
-            return [
-                ABTest(id=r[0], test_name=r[1], model_a=r[2], model_b=r[3], split_pct=r[4], status=r[5])
-                for r in rows
-            ]
+            with conn.cursor() as cur:
+                await cur.execute(sql)
+                rows = await cur.fetchall()
+                return [
+                    ABTest(id=r[0], test_name=r[1], model_a=r[2], model_b=r[3], split_pct=r[4], status=r[5])
+                    for r in rows
+                ]
 
     async def create_ab_test(self, test: ABTest) -> int:
         """Insert an A/B test and return its id."""
         sql = """INSERT INTO ab_tests (test_name, model_a, model_b, split_pct, status)
                  VALUES (:1, :2, :3, :4, :5) RETURNING id INTO :out_id"""
         async with self._pool.acquire() as conn:
-            out_id = conn.var(oracledb.NUMBER)
-            await conn.execute(sql, [
-                test.test_name, test.model_a, test.model_b, test.split_pct,
-                test.status, out_id,
-            ])
+            with conn.cursor() as cur:
+                out_id = cur.var(oracledb.NUMBER)
+                await cur.execute(sql, [
+                    test.test_name, test.model_a, test.model_b, test.split_pct,
+                    test.status, out_id,
+                ])
             await conn.commit()
             return int(out_id.getvalue()[0])
 
     async def update_ab_test_status(self, test_name: str, status: str):
         """Update an A/B test's status."""
         async with self._pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE ab_tests SET status = :1 WHERE test_name = :2",
-                [status, test_name],
-            )
+            with conn.cursor() as cur:
+                await cur.execute(
+                    "UPDATE ab_tests SET status = :1 WHERE test_name = :2",
+                    [status, test_name],
+                )
             await conn.commit()
 
     async def get_ab_report(self, test_name: str) -> dict:
@@ -427,11 +446,12 @@ class Database:
         WHERE t.test_name = :1
         GROUP BY r.model_used"""
         async with self._pool.acquire() as conn:
-            cursor = await conn.execute(sql, [test_name])
-            columns = [col[0].lower() for col in cursor.description]
-            rows = await cursor.fetchall()
-            variants = [dict(zip(columns, row)) for row in rows]
-            return {"test_name": test_name, "variants": variants}
+            with conn.cursor() as cur:
+                await cur.execute(sql, [test_name])
+                columns = [col[0].lower() for col in cur.description]
+                rows = await cur.fetchall()
+                variants = [dict(zip(columns, row)) for row in rows]
+                return {"test_name": test_name, "variants": variants}
 
     # ------------------------------------------------------------------ #
     # Upstream operations
@@ -448,26 +468,28 @@ class Database:
                      FROM upstreams ORDER BY priority"""
             params = []
         async with self._pool.acquire() as conn:
-            cursor = await conn.execute(sql, params)
-            rows = await cursor.fetchall()
-            return [
-                Upstream(
-                    id=r[0], api_type=r[1], base_url=r[2],
-                    priority=r[3], is_healthy=bool(r[4]), fail_count=r[5],
-                )
-                for r in rows
-            ]
+            with conn.cursor() as cur:
+                await cur.execute(sql, params) if params else await cur.execute(sql)
+                rows = await cur.fetchall()
+                return [
+                    Upstream(
+                        id=r[0], api_type=r[1], base_url=r[2],
+                        priority=r[3], is_healthy=bool(r[4]), fail_count=r[5],
+                    )
+                    for r in rows
+                ]
 
     async def add_upstream(self, upstream: Upstream) -> int:
         """Insert an upstream and return its id."""
         sql = """INSERT INTO upstreams (api_type, base_url, priority, is_healthy, fail_count)
                  VALUES (:1, :2, :3, :4, :5) RETURNING id INTO :out_id"""
         async with self._pool.acquire() as conn:
-            out_id = conn.var(oracledb.NUMBER)
-            await conn.execute(sql, [
-                upstream.api_type, upstream.base_url, upstream.priority,
-                1 if upstream.is_healthy else 0, upstream.fail_count, out_id,
-            ])
+            with conn.cursor() as cur:
+                out_id = cur.var(oracledb.NUMBER)
+                await cur.execute(sql, [
+                    upstream.api_type, upstream.base_url, upstream.priority,
+                    1 if upstream.is_healthy else 0, upstream.fail_count, out_id,
+                ])
             await conn.commit()
             return int(out_id.getvalue()[0])
 
@@ -478,13 +500,15 @@ class Database:
         else:
             sql = "UPDATE upstreams SET is_healthy = 0, fail_count = fail_count + 1, last_check = SYSTIMESTAMP WHERE id = :1"
         async with self._pool.acquire() as conn:
-            await conn.execute(sql, [upstream_id])
+            with conn.cursor() as cur:
+                await cur.execute(sql, [upstream_id])
             await conn.commit()
 
     async def remove_upstream(self, upstream_id: int):
         """Delete an upstream by id."""
         async with self._pool.acquire() as conn:
-            await conn.execute("DELETE FROM upstreams WHERE id = :1", [upstream_id])
+            with conn.cursor() as cur:
+                await cur.execute("DELETE FROM upstreams WHERE id = :1", [upstream_id])
             await conn.commit()
 
     # ------------------------------------------------------------------ #
@@ -496,7 +520,8 @@ class Database:
         sql = """INSERT INTO prompt_store (request_id, request_body, response_body, prompt_hash)
                  VALUES (:1, :2, :3, :4)"""
         async with self._pool.acquire() as conn:
-            await conn.execute(sql, [request_id, request_body, response_body, prompt_hash])
+            with conn.cursor() as cur:
+                await cur.execute(sql, [request_id, request_body, response_body, prompt_hash])
             await conn.commit()
 
     async def get_prompts_for_replay(self, source_model: str, from_date: str, to_date: str) -> list[dict]:
@@ -511,10 +536,11 @@ class Database:
                    AND p.created_at < TO_TIMESTAMP(:3, 'YYYY-MM-DD')
                  ORDER BY p.created_at"""
         async with self._pool.acquire() as conn:
-            cursor = await conn.execute(sql, [source_model, from_date, to_date])
-            columns = [col[0].lower() for col in cursor.description]
-            rows = await cursor.fetchall()
-            return [dict(zip(columns, row)) for row in rows]
+            with conn.cursor() as cur:
+                await cur.execute(sql, [source_model, from_date, to_date])
+                columns = [col[0].lower() for col in cur.description]
+                rows = await cur.fetchall()
+                return [dict(zip(columns, row)) for row in rows]
 
     # ------------------------------------------------------------------ #
     # Cache operations
@@ -527,18 +553,19 @@ class Database:
                    AND (ttl_expires IS NULL OR ttl_expires > SYSTIMESTAMP)
                  FETCH FIRST 1 ROWS ONLY"""
         async with self._pool.acquire() as conn:
-            cursor = await conn.execute(sql, [prompt_hash, model])
-            row = await cursor.fetchone()
+            with conn.cursor() as cur:
+                await cur.execute(sql, [prompt_hash, model])
+                row = await cur.fetchone()
             if row is None:
                 return None
             cache_id, response_body = row[0], row[1]
-            await conn.execute(
-                "UPDATE prompt_vectors SET hit_count = hit_count + 1 WHERE id = :1",
-                [cache_id],
-            )
+            with conn.cursor() as cur:
+                await cur.execute(
+                    "UPDATE prompt_vectors SET hit_count = hit_count + 1 WHERE id = :1",
+                    [cache_id],
+                )
             await conn.commit()
-            body = json.loads(response_body) if isinstance(response_body, str) else response_body
-            return {"id": cache_id, "response_body": body}
+            return {"response_body": response_body, "tier": "exact", "similarity": 1.0}
 
     async def cache_lookup_semantic(self, embedding: list[float], model: str, threshold: float = 0.05) -> dict | None:
         """Look up a cached response by vector similarity."""
@@ -550,41 +577,41 @@ class Database:
                  ORDER BY distance
                  FETCH FIRST 1 ROWS ONLY"""
         async with self._pool.acquire() as conn:
-            cursor = await conn.execute(sql, [str(embedding), model])
-            row = await cursor.fetchone()
+            with conn.cursor() as cur:
+                await cur.execute(sql, [str(embedding), model])
+                row = await cur.fetchone()
             if row is None or row[3] > threshold:
                 return None
             cache_id = row[0]
-            await conn.execute(
-                "UPDATE prompt_vectors SET hit_count = hit_count + 1 WHERE id = :1",
-                [cache_id],
-            )
+            with conn.cursor() as cur:
+                await cur.execute(
+                    "UPDATE prompt_vectors SET hit_count = hit_count + 1 WHERE id = :1",
+                    [cache_id],
+                )
             await conn.commit()
-            body = json.loads(row[2]) if isinstance(row[2], str) else row[2]
-            return {"id": cache_id, "prompt_hash": row[1], "response_body": body, "distance": row[3]}
+            return {"response_body": row[2], "tier": "semantic", "similarity": 1.0 - row[3]}
 
     async def cache_store(self, prompt_hash: str, model: str, embedding: list[float] | None, response_body: str, ttl_seconds: int = 86400):
         """Store a response in the vector cache."""
         sql = """INSERT INTO prompt_vectors (prompt_hash, model, embedding, response_body, ttl_expires)
                  VALUES (:1, :2, :3, :4, SYSTIMESTAMP + NUMTODSINTERVAL(:5, 'SECOND'))"""
         async with self._pool.acquire() as conn:
-            await conn.execute(sql, [
-                prompt_hash, model,
-                str(embedding) if embedding else None,
-                response_body, ttl_seconds,
-            ])
+            with conn.cursor() as cur:
+                await cur.execute(sql, [
+                    prompt_hash, model,
+                    str(embedding) if embedding else None,
+                    response_body, ttl_seconds,
+                ])
             await conn.commit()
 
     async def cache_clear(self, model: str | None = None):
         """Clear cached entries, optionally filtered by model."""
-        if model:
-            sql = "DELETE FROM prompt_vectors WHERE model = :1"
-            params = [model]
-        else:
-            sql = "TRUNCATE TABLE prompt_vectors"
-            params = []
         async with self._pool.acquire() as conn:
-            await conn.execute(sql, params) if params else await conn.execute(sql)
+            with conn.cursor() as cur:
+                if model:
+                    await cur.execute("DELETE FROM prompt_vectors WHERE model = :1", [model])
+                else:
+                    await cur.execute("TRUNCATE TABLE prompt_vectors")
             await conn.commit()
 
     async def cache_stats(self) -> dict:
@@ -595,13 +622,14 @@ class Database:
             COUNT(CASE WHEN ttl_expires IS NULL OR ttl_expires > SYSTIMESTAMP THEN 1 END) AS active_entries
         FROM prompt_vectors"""
         async with self._pool.acquire() as conn:
-            cursor = await conn.execute(sql)
-            row = await cursor.fetchone()
-            return {
-                "total_entries": row[0],
-                "total_hits": row[1],
-                "active_entries": row[2],
-            }
+            with conn.cursor() as cur:
+                await cur.execute(sql)
+                row = await cur.fetchone()
+                return {
+                    "entries": row[0],
+                    "total_hits": row[1],
+                    "active_entries": row[2],
+                }
 
     # ------------------------------------------------------------------ #
     # Cost attribution
@@ -610,52 +638,55 @@ class Database:
     async def cost_by_tag(self, timeframe: str = "24h") -> list[dict]:
         """Return cost breakdown by feature_tag."""
         where = _timeframe_where(timeframe)
-        sql = f"""SELECT feature_tag,
+        sql = f"""SELECT NVL(feature_tag, '(untagged)') AS tag,
             COUNT(*) AS requests,
             NVL(SUM(estimated_cost), 0) AS total_cost,
+            NVL(AVG(estimated_cost), 0) AS avg_cost,
             NVL(SUM(input_tokens), 0) AS input_tokens,
             NVL(SUM(output_tokens), 0) AS output_tokens
         FROM requests WHERE {where}
         GROUP BY feature_tag ORDER BY total_cost DESC"""
         async with self._pool.acquire() as conn:
-            cursor = await conn.execute(sql)
-            columns = [col[0].lower() for col in cursor.description]
-            rows = await cursor.fetchall()
-            return [dict(zip(columns, row)) for row in rows]
+            with conn.cursor() as cur:
+                await cur.execute(sql)
+                columns = [col[0].lower() for col in cur.description]
+                rows = await cur.fetchall()
+                return [dict(zip(columns, row)) for row in rows]
 
     async def cost_by_app(self, timeframe: str = "24h") -> list[dict]:
         """Return cost breakdown by source_app."""
         where = _timeframe_where(timeframe)
-        sql = f"""SELECT source_app,
+        sql = f"""SELECT NVL(source_app, '(unknown)') AS app,
             COUNT(*) AS requests,
             NVL(SUM(estimated_cost), 0) AS total_cost,
-            NVL(SUM(input_tokens), 0) AS input_tokens,
-            NVL(SUM(output_tokens), 0) AS output_tokens
+            NVL(AVG(estimated_cost), 0) AS avg_cost
         FROM requests WHERE {where}
         GROUP BY source_app ORDER BY total_cost DESC"""
         async with self._pool.acquire() as conn:
-            cursor = await conn.execute(sql)
-            columns = [col[0].lower() for col in cursor.description]
-            rows = await cursor.fetchall()
-            return [dict(zip(columns, row)) for row in rows]
+            with conn.cursor() as cur:
+                await cur.execute(sql)
+                columns = [col[0].lower() for col in cur.description]
+                rows = await cur.fetchall()
+                return [dict(zip(columns, row)) for row in rows]
 
     async def cost_by_session(self, top: int = 20) -> list[dict]:
         """Return top sessions by cost."""
         sql = """SELECT session_id,
-            COUNT(*) AS requests,
+            COUNT(*) AS turns,
             NVL(SUM(estimated_cost), 0) AS conversation_cost,
-            MIN(TO_CHAR(created_at, 'YYYY-MM-DD"T"HH24:MI:SS')) AS first_request,
-            MAX(TO_CHAR(created_at, 'YYYY-MM-DD"T"HH24:MI:SS')) AS last_request
+            MIN(TO_CHAR(created_at, 'YYYY-MM-DD"T"HH24:MI:SS')) AS started,
+            MAX(TO_CHAR(created_at, 'YYYY-MM-DD"T"HH24:MI:SS')) AS ended
         FROM requests
-        WHERE session_id IS NOT NULL AND session_id != ''
+        WHERE session_id IS NOT NULL AND session_id != ' '
         GROUP BY session_id
         ORDER BY conversation_cost DESC
         FETCH FIRST :1 ROWS ONLY"""
         async with self._pool.acquire() as conn:
-            cursor = await conn.execute(sql, [top])
-            columns = [col[0].lower() for col in cursor.description]
-            rows = await cursor.fetchall()
-            return [dict(zip(columns, row)) for row in rows]
+            with conn.cursor() as cur:
+                await cur.execute(sql, [top])
+                columns = [col[0].lower() for col in cur.description]
+                rows = await cur.fetchall()
+                return [dict(zip(columns, row)) for row in rows]
 
     async def cost_forecast(self) -> dict:
         """Forecast monthly cost based on last 7 days."""
@@ -665,16 +696,17 @@ class Database:
         FROM requests
         WHERE created_at >= SYSTIMESTAMP - INTERVAL '7' DAY"""
         async with self._pool.acquire() as conn:
-            cursor = await conn.execute(sql)
-            row = await cursor.fetchone()
-            week_total = float(row[0])
-            active_days = row[1] or 1
-            daily_avg = week_total / max(active_days, 1)
-            return {
-                "last_7_days_total": round(week_total, 4),
-                "daily_avg": round(daily_avg, 4),
-                "monthly_projection": round(daily_avg * 30, 4),
-            }
+            with conn.cursor() as cur:
+                await cur.execute(sql)
+                row = await cur.fetchone()
+                week_total = float(row[0])
+                active_days = row[1] or 1
+                daily_avg = week_total / max(active_days, 1)
+                return {
+                    "last_7_days_total": round(week_total, 4),
+                    "daily_avg": round(daily_avg, 4),
+                    "monthly_projection": round(daily_avg * 30, 4),
+                }
 
     # ------------------------------------------------------------------ #
     # Routing stats
@@ -692,7 +724,8 @@ class Database:
         GROUP BY rr.id, rr.rule_name, rr.target_model
         ORDER BY total_requests DESC"""
         async with self._pool.acquire() as conn:
-            cursor = await conn.execute(sql)
-            columns = [col[0].lower() for col in cursor.description]
-            rows = await cursor.fetchall()
-            return [dict(zip(columns, row)) for row in rows]
+            with conn.cursor() as cur:
+                await cur.execute(sql)
+                columns = [col[0].lower() for col in cur.description]
+                rows = await cur.fetchall()
+                return [dict(zip(columns, row)) for row in rows]

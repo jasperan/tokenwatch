@@ -1,12 +1,12 @@
 """Pydantic models for TokenWatch usage records."""
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field
 
 
 def _utcnow():
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 class UsageRecord(BaseModel):

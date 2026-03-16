@@ -272,13 +272,13 @@ async def _budget_status():
     table.add_column("Action")
 
     for s in statuses:
-        util = s["utilization"]
+        util = s["utilization_pct"] / 100
         util_style = "green" if util < 0.8 else ("yellow" if util < 1.0 else "red")
         table.add_row(
             str(s["id"]),
             f"{s['scope']}: {s['scope_value']}" if s["scope_value"] else s["scope"],
             f"${s['limit_amount']:.2f}",
-            f"${s['spent']:.2f}",
+            f"${s['current_spend']:.2f}",
             f"[{util_style}]{util:.0%}[/]",
             s["period"],
             s["action_on_limit"],
