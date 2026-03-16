@@ -4,174 +4,1388 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TokenWatch Dashboard</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
   :root {
-    --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3a;
-    --text: #e4e4e7; --muted: #71717a; --accent: #818cf8;
-    --green: #34d399; --red: #f87171; --yellow: #fbbf24;
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface-hover: #263348;
+    --border: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #6366f1;
+    --accent-light: #818cf8;
+    --accent-dim: rgba(99, 102, 241, 0.15);
+    --green: #22c55e;
+    --green-dim: rgba(34, 197, 94, 0.15);
+    --red: #ef4444;
+    --red-dim: rgba(239, 68, 68, 0.15);
+    --yellow: #eab308;
+    --yellow-dim: rgba(234, 179, 8, 0.15);
+    --cyan: #06b6d4;
+    --cyan-dim: rgba(6, 182, 212, 0.15);
+    --pink: #ec4899;
+    --orange: #f97316;
   }
+
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, 'Segoe UI', Roboto, monospace; background: var(--bg); color: var(--text); padding: 24px; }
-  h1 { font-size: 1.5rem; margin-bottom: 8px; }
-  .subtitle { color: var(--muted); font-size: 0.85rem; margin-bottom: 24px; }
-  .stats-grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 16px; margin-bottom: 24px;
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
   }
-  .stat-card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 8px; padding: 16px;
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
   }
-  .stat-label { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
-  .stat-value { font-size: 1.5rem; font-weight: 700; margin-top: 4px; }
-  .charts-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 24px; }
-  .chart-card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 8px; padding: 16px;
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
   }
-  .chart-title { font-size: 0.9rem; font-weight: 600; margin-bottom: 12px; }
-  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-  th { text-align: left; color: var(--muted); font-weight: 500; padding: 8px 12px; border-bottom: 1px solid var(--border); }
-  td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
-  tr:hover { background: rgba(129, 140, 248, 0.05); }
-  .badge {
-    display: inline-block; padding: 2px 8px; border-radius: 4px;
-    font-size: 0.75rem; font-weight: 500;
+
+  .logo {
+    width: 32px;
+    height: 32px;
+    background: var(--accent);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 16px;
+    color: #fff;
   }
-  .badge-anthropic { background: rgba(129, 140, 248, 0.15); color: var(--accent); }
-  .badge-openai { background: rgba(52, 211, 153, 0.15); color: var(--green); }
-  .timeframe-btns { margin-bottom: 16px; display: flex; gap: 8px; }
+
+  .header h1 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  .header h1 span {
+    color: var(--accent-light);
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .ws-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  .ws-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--red);
+    transition: background 0.3s;
+  }
+
+  .ws-dot.connected { background: var(--green); }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 0;
+    padding: 0 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tab {
+    padding: 12px 20px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+    user-select: none;
+  }
+
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent-light); border-bottom-color: var(--accent); }
+
+  /* Main content */
+  .main { padding: 20px 24px; }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Timeframe selector */
+  .controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .timeframe-btns {
+    display: flex;
+    gap: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 3px;
+  }
+
   .timeframe-btns button {
-    background: var(--surface); border: 1px solid var(--border); color: var(--text);
-    padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 0.8rem;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 500;
+    transition: all 0.2s;
   }
-  .timeframe-btns button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-  @media (max-width: 768px) { .charts-grid { grid-template-columns: 1fr; } }
+
+  .timeframe-btns button:hover { color: var(--text); }
+  .timeframe-btns button.active { background: var(--accent); color: #fff; }
+
+  .last-updated {
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  /* Stats grid */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    transition: border-color 0.2s;
+  }
+
+  .stat-card:hover { border-color: var(--accent); }
+
+  .stat-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+
+  .stat-value {
+    font-size: 1.6rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+
+  .stat-sub {
+    font-size: 0.72rem;
+    color: var(--green);
+    margin-top: 4px;
+    font-weight: 500;
+  }
+
+  .stat-sub.warn { color: var(--yellow); }
+
+  /* Cards */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+
+  .card-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .card-title .icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+  }
+
+  /* Charts layout */
+  .charts-row {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .chart-container {
+    position: relative;
+    width: 100%;
+  }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+  }
+
+  th {
+    text-align: left;
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+  }
+
+  tr:hover td { background: rgba(99, 102, 241, 0.04); }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .badge-anthropic { background: var(--accent-dim); color: var(--accent-light); }
+  .badge-openai { background: var(--green-dim); color: var(--green); }
+
+  /* Two column layout */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .three-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  /* Health dots */
+  .health-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 8px;
+  }
+
+  .health-dot.healthy { background: var(--green); box-shadow: 0 0 6px rgba(34, 197, 94, 0.4); }
+  .health-dot.unhealthy { background: var(--red); box-shadow: 0 0 6px rgba(239, 68, 68, 0.4); }
+
+  /* Budget gauges */
+  .gauge {
+    margin-bottom: 14px;
+  }
+
+  .gauge-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+
+  .gauge-label {
+    font-size: 0.8rem;
+    font-weight: 500;
+  }
+
+  .gauge-value {
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  .gauge-bar {
+    width: 100%;
+    height: 8px;
+    background: rgba(51, 65, 85, 0.6);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .gauge-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.5s ease;
+  }
+
+  .gauge-fill.green { background: var(--green); }
+  .gauge-fill.yellow { background: var(--yellow); }
+  .gauge-fill.red { background: var(--red); }
+
+  /* A/B test cards */
+  .ab-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+  }
+
+  .ab-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  .ab-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+
+  .ab-status {
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    background: var(--green-dim);
+    color: var(--green);
+    text-transform: uppercase;
+  }
+
+  .ab-models {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .ab-model-card {
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+  }
+
+  .ab-model-name {
+    font-weight: 600;
+    font-size: 0.85rem;
+    margin-bottom: 4px;
+  }
+
+  .ab-model-pct {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--accent-light);
+  }
+
+  .ab-vs {
+    font-size: 0.75rem;
+    color: var(--muted);
+    font-weight: 700;
+  }
+
+  /* Forecast card */
+  .forecast-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+
+  .forecast-item {
+    text-align: center;
+  }
+
+  .forecast-amount {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--accent-light);
+  }
+
+  .forecast-label {
+    font-size: 0.72rem;
+    color: var(--muted);
+    margin-top: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* Live ticker */
+  .ticker-row {
+    animation: fadeIn 0.3s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Routing rule row */
+  .rule-condition {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.75rem;
+    background: rgba(99, 102, 241, 0.08);
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+
+  /* Empty state */
+  .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--muted);
+  }
+
+  .empty-state-icon {
+    font-size: 2rem;
+    margin-bottom: 8px;
+    opacity: 0.5;
+  }
+
+  .empty-state-text {
+    font-size: 0.85rem;
+  }
+
+  /* Replay placeholder */
+  .replay-placeholder {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 40px;
+    text-align: center;
+    color: var(--muted);
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .charts-row { grid-template-columns: 1fr; }
+    .two-col { grid-template-columns: 1fr; }
+    .three-col { grid-template-columns: 1fr; }
+    .stats-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+    .forecast-grid { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 600px) {
+    .header { flex-direction: column; gap: 8px; }
+    .tabs { overflow-x: auto; }
+    .main { padding: 12px; }
+  }
+
+  /* Pulse for live items */
+  .pulse {
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  /* Money formatting */
+  .money { color: var(--green); }
+  .money-warn { color: var(--yellow); }
+  .money-bad { color: var(--red); }
+
+  /* Truncate */
+  .truncate {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 </style>
 </head>
 <body>
-<h1>TokenWatch</h1>
-<p class="subtitle">Real-time API token usage monitor</p>
 
-<div class="timeframe-btns">
-  <button class="active" data-tf="1h">1H</button>
-  <button data-tf="24h">24H</button>
-  <button data-tf="7d">7D</button>
-  <button data-tf="30d">30D</button>
-  <button data-tf="all">All</button>
-</div>
-
-<div class="stats-grid">
-  <div class="stat-card"><div class="stat-label">Total Requests</div><div class="stat-value" id="total-requests">0</div></div>
-  <div class="stat-card"><div class="stat-label">Input Tokens</div><div class="stat-value" id="total-input">0</div></div>
-  <div class="stat-card"><div class="stat-label">Output Tokens</div><div class="stat-value" id="total-output">0</div></div>
-  <div class="stat-card"><div class="stat-label">Estimated Cost</div><div class="stat-value" id="total-cost">$0.00</div></div>
-  <div class="stat-card"><div class="stat-label">Cache Read Tokens</div><div class="stat-value" id="total-cache-read">0</div></div>
-</div>
-
-<div class="charts-grid">
-  <div class="chart-card">
-    <div class="chart-title">Tokens Over Time</div>
-    <canvas id="timeChart" height="200"></canvas>
+<!-- Header -->
+<div class="header">
+  <div class="header-left">
+    <div class="logo">T</div>
+    <h1>Token<span>Watch</span></h1>
   </div>
-  <div class="chart-card">
-    <div class="chart-title">Tokens by Model</div>
-    <canvas id="modelChart" height="200"></canvas>
+  <div class="header-right">
+    <div class="ws-status">
+      <div class="ws-dot" id="ws-dot"></div>
+      <span id="ws-label">Disconnected</span>
+    </div>
+    <span class="last-updated" id="last-updated"></span>
   </div>
 </div>
 
-<div class="chart-card">
-  <div class="chart-title">Recent Requests</div>
-  <table>
-    <thead><tr>
-      <th>Time</th><th>API</th><th>Model</th><th>Input</th><th>Output</th><th>Latency</th><th>Cost</th><th>Source</th>
-    </tr></thead>
-    <tbody id="requests-table"></tbody>
-  </table>
+<!-- Tabs -->
+<div class="tabs">
+  <div class="tab active" data-tab="overview">Overview</div>
+  <div class="tab" data-tab="cost">Cost Intelligence</div>
+  <div class="tab" data-tab="experiments">Experiments</div>
+  <div class="tab" data-tab="system">System</div>
+</div>
+
+<!-- Main -->
+<div class="main">
+
+  <!-- ========== OVERVIEW TAB ========== -->
+  <div class="tab-content active" id="tab-overview">
+    <div class="controls">
+      <div class="timeframe-btns">
+        <button class="active" data-tf="1h">1H</button>
+        <button data-tf="24h">24H</button>
+        <button data-tf="7d">7D</button>
+        <button data-tf="30d">30D</button>
+        <button data-tf="all">All</button>
+      </div>
+    </div>
+
+    <div class="stats-grid" id="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Requests</div>
+        <div class="stat-value" id="s-requests">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Input Tokens</div>
+        <div class="stat-value" id="s-input">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Output Tokens</div>
+        <div class="stat-value" id="s-output">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Cache Hits</div>
+        <div class="stat-value" id="s-cache-hits">0</div>
+        <div class="stat-sub" id="s-cache-read"></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Cost</div>
+        <div class="stat-value money" id="s-cost">$0.00</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Cache Savings</div>
+        <div class="stat-value" id="s-savings" style="color: var(--green)">$0.00</div>
+        <div class="stat-sub" id="s-savings-sub">Saved from cache</div>
+      </div>
+    </div>
+
+    <div class="charts-row">
+      <div class="card">
+        <div class="card-title">Tokens Over Time</div>
+        <div class="chart-container">
+          <canvas id="timeChart"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Model Distribution</div>
+        <div class="chart-container">
+          <canvas id="modelChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Live Request Feed</div>
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>API</th>
+              <th>Model</th>
+              <th>Input</th>
+              <th>Output</th>
+              <th>Latency</th>
+              <th>Cost</th>
+              <th>Source</th>
+            </tr>
+          </thead>
+          <tbody id="live-ticker"></tbody>
+        </table>
+      </div>
+      <div class="empty-state" id="ticker-empty">
+        <div class="empty-state-icon">~</div>
+        <div class="empty-state-text">Waiting for live events via WebSocket...</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Recent Requests</div>
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>API</th>
+              <th>Model</th>
+              <th>Input</th>
+              <th>Output</th>
+              <th>Latency</th>
+              <th>Cost</th>
+              <th>Source</th>
+            </tr>
+          </thead>
+          <tbody id="recent-table"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== COST INTELLIGENCE TAB ========== -->
+  <div class="tab-content" id="tab-cost">
+    <div class="controls">
+      <div class="timeframe-btns" id="cost-timeframe">
+        <button class="active" data-tf="1h">1H</button>
+        <button data-tf="24h">24H</button>
+        <button data-tf="7d">7D</button>
+        <button data-tf="30d">30D</button>
+        <button data-tf="all">All</button>
+      </div>
+    </div>
+
+    <!-- Forecast -->
+    <div class="card">
+      <div class="card-title">Cost Forecast</div>
+      <div class="forecast-grid" id="forecast-grid">
+        <div class="forecast-item">
+          <div class="forecast-amount" id="f-7d">$0.00</div>
+          <div class="forecast-label">Last 7 Days</div>
+        </div>
+        <div class="forecast-item">
+          <div class="forecast-amount" id="f-daily">$0.00</div>
+          <div class="forecast-label">Daily Average</div>
+        </div>
+        <div class="forecast-item">
+          <div class="forecast-amount" id="f-monthly">$0.00</div>
+          <div class="forecast-label">Monthly Projection</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <!-- Cost by Tag -->
+      <div class="card">
+        <div class="card-title">Cost by Tag</div>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr><th>Tag</th><th>Requests</th><th>Total Cost</th><th>Avg Cost</th></tr>
+            </thead>
+            <tbody id="cost-tag-table"></tbody>
+          </table>
+        </div>
+        <div class="empty-state" id="cost-tag-empty" style="display:none;">
+          <div class="empty-state-text">No tagged requests yet</div>
+        </div>
+      </div>
+
+      <!-- Cost by App -->
+      <div class="card">
+        <div class="card-title">Cost by App</div>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr><th>App</th><th>Requests</th><th>Total Cost</th></tr>
+            </thead>
+            <tbody id="cost-app-table"></tbody>
+          </table>
+        </div>
+        <div class="empty-state" id="cost-app-empty" style="display:none;">
+          <div class="empty-state-text">No app data yet</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Most Expensive Sessions -->
+    <div class="card">
+      <div class="card-title">Most Expensive Sessions</div>
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr><th>Session ID</th><th>Requests</th><th>Cost</th><th>First Request</th><th>Last Request</th></tr>
+          </thead>
+          <tbody id="cost-session-table"></tbody>
+        </table>
+      </div>
+      <div class="empty-state" id="cost-session-empty" style="display:none;">
+        <div class="empty-state-text">No session data yet</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== EXPERIMENTS TAB ========== -->
+  <div class="tab-content" id="tab-experiments">
+    <div class="card">
+      <div class="card-title">Active A/B Tests</div>
+      <div id="ab-container">
+        <div class="empty-state" id="ab-empty">
+          <div class="empty-state-icon">~</div>
+          <div class="empty-state-text">No active A/B tests configured</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 16px;">
+      <div class="card-title">Request Replay</div>
+      <div class="replay-placeholder">
+        <div style="font-size: 1.2rem; margin-bottom: 8px; opacity: 0.6;">Replay Engine</div>
+        <div style="font-size: 0.8rem;">Select a request from Recent Requests to replay it through different models and compare outputs.</div>
+        <div style="margin-top: 12px; font-size: 0.75rem; color: var(--accent-light);">Coming soon</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== SYSTEM TAB ========== -->
+  <div class="tab-content" id="tab-system">
+    <div class="two-col">
+      <!-- Upstream Health -->
+      <div class="card">
+        <div class="card-title">Upstream Health</div>
+        <div id="upstreams-container">
+          <table>
+            <thead>
+              <tr><th>Status</th><th>API</th><th>URL</th><th>Priority</th><th>Failures</th></tr>
+            </thead>
+            <tbody id="upstreams-table"></tbody>
+          </table>
+        </div>
+        <div class="empty-state" id="upstreams-empty" style="display:none;">
+          <div class="empty-state-text">No upstreams configured</div>
+        </div>
+      </div>
+
+      <!-- Cache Stats -->
+      <div class="card">
+        <div class="card-title">Cache Stats</div>
+        <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 0;">
+          <div>
+            <div class="stat-label">Total Entries</div>
+            <div class="stat-value" id="cache-total" style="font-size: 1.3rem;">0</div>
+          </div>
+          <div>
+            <div class="stat-label">Active Entries</div>
+            <div class="stat-value" id="cache-active" style="font-size: 1.3rem;">0</div>
+          </div>
+          <div>
+            <div class="stat-label">Total Hits</div>
+            <div class="stat-value" id="cache-hits" style="font-size: 1.3rem; color: var(--green);">0</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Budget Gauges -->
+    <div class="card">
+      <div class="card-title">Budget Status</div>
+      <div id="budget-container">
+        <div class="empty-state" id="budget-empty">
+          <div class="empty-state-text">No budgets configured</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Routing Rules -->
+    <div class="card">
+      <div class="card-title">Active Routing Rules</div>
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr><th>Rule</th><th>Target Model</th><th>Requests</th><th>Cost</th><th>Avg Latency</th></tr>
+          </thead>
+          <tbody id="routing-table"></tbody>
+        </table>
+      </div>
+      <div class="empty-state" id="routing-empty" style="display:none;">
+        <div class="empty-state-text">No routing rules configured</div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script>
+/* ================================================================
+   TokenWatch Dashboard
+   ================================================================ */
+
+// State
 let currentTimeframe = '1h';
-const fmt = n => n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'K' : n.toString();
+let costTimeframe = '1h';
+let timeChart = null;
+let modelChart = null;
+let liveEvents = [];
+const MAX_LIVE = 20;
 
-const colors = ['#818cf8','#34d399','#fbbf24','#f87171','#a78bfa','#fb923c','#38bdf8','#f472b6'];
+// ---- Helpers ----
 
-let timeChart, modelChart;
-
-function initCharts() {
-  const chartOpts = { responsive: true, plugins: { legend: { labels: { color: '#71717a' } } }, scales: {
-    x: { ticks: { color: '#71717a' }, grid: { color: '#2a2d3a' } },
-    y: { ticks: { color: '#71717a' }, grid: { color: '#2a2d3a' } }
-  }};
-  timeChart = new Chart(document.getElementById('timeChart'), {
-    type: 'line', data: { labels: [], datasets: [
-      { label: 'Input', data: [], borderColor: '#818cf8', tension: 0.3, fill: false },
-      { label: 'Output', data: [], borderColor: '#34d399', tension: 0.3, fill: false },
-    ]}, options: chartOpts,
-  });
-  modelChart = new Chart(document.getElementById('modelChart'), {
-    type: 'doughnut', data: { labels: [], datasets: [{ data: [], backgroundColor: colors }] },
-    options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { color: '#71717a' } } } },
-  });
+function fmt(n) {
+  if (n == null) return '0';
+  n = Number(n);
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+  return n.toLocaleString();
 }
 
-async function refresh() {
-  try {
-    const [statsRes, recentRes, tsRes] = await Promise.all([
-      fetch(`/api/stats?timeframe=${currentTimeframe}`),
-      fetch('/api/recent?limit=30'),
-      fetch(`/api/timeseries?timeframe=${currentTimeframe}`),
-    ]);
-    const stats = await statsRes.json();
-    const recent = await recentRes.json();
-    const ts = await tsRes.json();
-
-    document.getElementById('total-requests').textContent = fmt(stats.total_requests);
-    document.getElementById('total-input').textContent = fmt(stats.total_input_tokens);
-    document.getElementById('total-output').textContent = fmt(stats.total_output_tokens);
-    document.getElementById('total-cost').textContent = '$' + stats.total_estimated_cost.toFixed(4);
-    document.getElementById('total-cache-read').textContent = fmt(stats.total_cache_read_tokens);
-
-    // Time chart
-    timeChart.data.labels = ts.map(t => t.bucket.split('T')[1] || t.bucket);
-    timeChart.data.datasets[0].data = ts.map(t => t.input_tokens);
-    timeChart.data.datasets[1].data = ts.map(t => t.output_tokens);
-    timeChart.update();
-
-    // Model chart
-    const models = Object.entries(stats.models);
-    modelChart.data.labels = models.map(([m]) => m);
-    modelChart.data.datasets[0].data = models.map(([, v]) => v.input_tokens + v.output_tokens);
-    modelChart.update();
-
-    // Recent table
-    const tbody = document.getElementById('requests-table');
-    tbody.innerHTML = recent.map(r => `<tr>
-      <td>${new Date(r.created_at).toLocaleTimeString()}</td>
-      <td><span class="badge badge-${r.api_type}">${r.api_type}</span></td>
-      <td>${r.model}</td>
-      <td>${fmt(r.input_tokens)}</td>
-      <td>${fmt(r.output_tokens)}</td>
-      <td>${r.latency_ms}ms</td>
-      <td>${r.estimated_cost != null ? '$'+r.estimated_cost.toFixed(4) : '-'}</td>
-      <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.source_app}">${r.source_app.slice(0,30)}</td>
-    </tr>`).join('');
-  } catch(e) { console.error('Refresh failed:', e); }
+function money(n) {
+  if (n == null) return '$0.00';
+  n = Number(n);
+  if (n >= 1) return '$' + n.toFixed(2);
+  if (n >= 0.01) return '$' + n.toFixed(3);
+  return '$' + n.toFixed(4);
 }
 
-document.querySelectorAll('.timeframe-btns button').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelector('.timeframe-btns .active').classList.remove('active');
-    btn.classList.add('active');
-    currentTimeframe = btn.dataset.tf;
-    refresh();
+function timeAgo(dateStr) {
+  const d = new Date(dateStr);
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+const chartColors = ['#6366f1', '#22c55e', '#eab308', '#ef4444', '#a78bfa', '#f97316', '#06b6d4', '#ec4899', '#84cc16', '#f43f5e'];
+
+// ---- Tab Navigation ----
+
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelector('.tab.active').classList.remove('active');
+    tab.classList.add('active');
+    document.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
+    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+    refreshActiveTab();
   });
 });
 
+// ---- Timeframe selectors ----
+
+document.querySelectorAll('#tab-overview .timeframe-btns button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelector('#tab-overview .timeframe-btns .active').classList.remove('active');
+    btn.classList.add('active');
+    currentTimeframe = btn.dataset.tf;
+    refreshOverview();
+  });
+});
+
+document.querySelectorAll('#cost-timeframe button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelector('#cost-timeframe .active').classList.remove('active');
+    btn.classList.add('active');
+    costTimeframe = btn.dataset.tf;
+    refreshCost();
+  });
+});
+
+// ---- Chart Initialization ----
+
+function initCharts() {
+  const gridColor = 'rgba(51, 65, 85, 0.5)';
+  const tickColor = '#94a3b8';
+
+  const commonScales = {
+    x: {
+      ticks: { color: tickColor, maxRotation: 0, autoSkipPadding: 20, font: { size: 11 } },
+      grid: { color: gridColor, drawBorder: false }
+    },
+    y: {
+      ticks: { color: tickColor, font: { size: 11 } },
+      grid: { color: gridColor, drawBorder: false },
+      beginAtZero: true
+    }
+  };
+
+  timeChart = new Chart(document.getElementById('timeChart'), {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        {
+          label: 'Input Tokens',
+          data: [],
+          borderColor: '#6366f1',
+          backgroundColor: 'rgba(99, 102, 241, 0.1)',
+          tension: 0.35,
+          fill: true,
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+        },
+        {
+          label: 'Output Tokens',
+          data: [],
+          borderColor: '#22c55e',
+          backgroundColor: 'rgba(34, 197, 94, 0.08)',
+          tension: 0.35,
+          fill: true,
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          labels: { color: tickColor, usePointStyle: true, padding: 16, font: { size: 12 } }
+        }
+      },
+      scales: commonScales,
+    }
+  });
+
+  modelChart = new Chart(document.getElementById('modelChart'), {
+    type: 'doughnut',
+    data: {
+      labels: [],
+      datasets: [{
+        data: [],
+        backgroundColor: chartColors,
+        borderColor: '#1e293b',
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      cutout: '65%',
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { color: tickColor, padding: 12, usePointStyle: true, font: { size: 11 } }
+        }
+      }
+    }
+  });
+}
+
+// ---- API Fetch ----
+
+async function apiFetch(path) {
+  try {
+    const res = await fetch(path);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) {
+    console.error('API error:', path, e);
+    return null;
+  }
+}
+
+// ---- Refresh Overview ----
+
+async function refreshOverview() {
+  const [stats, recent, ts] = await Promise.all([
+    apiFetch(`/api/stats?timeframe=${currentTimeframe}`),
+    apiFetch('/api/recent?limit=20'),
+    apiFetch(`/api/timeseries?timeframe=${currentTimeframe}`),
+  ]);
+
+  if (stats) {
+    document.getElementById('s-requests').textContent = fmt(stats.total_requests);
+    document.getElementById('s-input').textContent = fmt(stats.total_input_tokens);
+    document.getElementById('s-output').textContent = fmt(stats.total_output_tokens);
+    document.getElementById('s-cache-hits').textContent = fmt(stats.total_cache_hits);
+    document.getElementById('s-cache-read').textContent = stats.total_cache_read_tokens > 0
+      ? fmt(stats.total_cache_read_tokens) + ' tokens read'
+      : '';
+    document.getElementById('s-cost').textContent = money(stats.total_estimated_cost);
+    document.getElementById('s-savings').textContent = money(stats.total_cache_savings);
+  }
+
+  if (ts && ts.length > 0) {
+    const labels = ts.map(t => {
+      const parts = (t.bucket || '').split('T');
+      return parts[1] ? parts[1].substring(0, 5) : parts[0];
+    });
+    timeChart.data.labels = labels;
+    timeChart.data.datasets[0].data = ts.map(t => t.input_tokens);
+    timeChart.data.datasets[1].data = ts.map(t => t.output_tokens);
+    timeChart.update('none');
+  }
+
+  if (stats && stats.models) {
+    const entries = Object.entries(stats.models);
+    modelChart.data.labels = entries.map(([m]) => m);
+    modelChart.data.datasets[0].data = entries.map(([, v]) => (v.input_tokens || 0) + (v.output_tokens || 0));
+    modelChart.update('none');
+  }
+
+  if (recent) {
+    renderRecentTable(recent);
+  }
+
+  document.getElementById('last-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+}
+
+function renderRecentTable(rows) {
+  const tbody = document.getElementById('recent-table');
+  tbody.innerHTML = rows.map(r => `<tr>
+    <td>${timeAgo(r.created_at)}</td>
+    <td><span class="badge badge-${escHtml(r.api_type)}">${escHtml(r.api_type)}</span></td>
+    <td>${escHtml(r.model)}</td>
+    <td>${fmt(r.input_tokens)}</td>
+    <td>${fmt(r.output_tokens)}</td>
+    <td>${r.latency_ms != null ? r.latency_ms + 'ms' : '-'}</td>
+    <td class="money">${r.estimated_cost != null ? money(r.estimated_cost) : '-'}</td>
+    <td class="truncate" title="${escHtml(r.source_app)}">${escHtml((r.source_app || '').slice(0, 30))}</td>
+  </tr>`).join('');
+}
+
+// ---- Refresh Cost Intelligence ----
+
+async function refreshCost() {
+  const [byTag, byApp, bySess, forecast] = await Promise.all([
+    apiFetch(`/api/cost/by-tag?timeframe=${costTimeframe}`),
+    apiFetch(`/api/cost/by-app?timeframe=${costTimeframe}`),
+    apiFetch('/api/cost/by-session?top=10'),
+    apiFetch('/api/cost/forecast'),
+  ]);
+
+  // Forecast
+  if (forecast) {
+    document.getElementById('f-7d').textContent = money(forecast.last_7_days_total);
+    document.getElementById('f-daily').textContent = money(forecast.daily_avg);
+    document.getElementById('f-monthly').textContent = money(forecast.monthly_projection);
+  }
+
+  // Cost by Tag
+  const tagTbody = document.getElementById('cost-tag-table');
+  const tagEmpty = document.getElementById('cost-tag-empty');
+  if (byTag && byTag.length > 0) {
+    tagEmpty.style.display = 'none';
+    tagTbody.parentElement.style.display = '';
+    tagTbody.innerHTML = byTag.map(r => {
+      const avg = r.requests > 0 ? r.total_cost / r.requests : 0;
+      return `<tr>
+        <td>${escHtml(r.feature_tag || 'untagged')}</td>
+        <td>${fmt(r.requests)}</td>
+        <td class="money">${money(r.total_cost)}</td>
+        <td class="money">${money(avg)}</td>
+      </tr>`;
+    }).join('');
+  } else {
+    tagTbody.parentElement.style.display = 'none';
+    tagEmpty.style.display = '';
+  }
+
+  // Cost by App
+  const appTbody = document.getElementById('cost-app-table');
+  const appEmpty = document.getElementById('cost-app-empty');
+  if (byApp && byApp.length > 0) {
+    appEmpty.style.display = 'none';
+    appTbody.parentElement.style.display = '';
+    appTbody.innerHTML = byApp.map(r => `<tr>
+      <td>${escHtml(r.source_app || 'unknown')}</td>
+      <td>${fmt(r.requests)}</td>
+      <td class="money">${money(r.total_cost)}</td>
+    </tr>`).join('');
+  } else {
+    appTbody.parentElement.style.display = 'none';
+    appEmpty.style.display = '';
+  }
+
+  // Sessions
+  const sessTbody = document.getElementById('cost-session-table');
+  const sessEmpty = document.getElementById('cost-session-empty');
+  if (bySess && bySess.length > 0) {
+    sessEmpty.style.display = 'none';
+    sessTbody.parentElement.style.display = '';
+    sessTbody.innerHTML = bySess.map(r => `<tr>
+      <td class="truncate" title="${escHtml(r.session_id)}">${escHtml((r.session_id || '').slice(0, 24))}</td>
+      <td>${fmt(r.requests)}</td>
+      <td class="money">${money(r.conversation_cost)}</td>
+      <td>${timeAgo(r.first_request)}</td>
+      <td>${timeAgo(r.last_request)}</td>
+    </tr>`).join('');
+  } else {
+    sessTbody.parentElement.style.display = 'none';
+    sessEmpty.style.display = '';
+  }
+}
+
+// ---- Refresh Experiments ----
+
+async function refreshExperiments() {
+  const tests = await apiFetch('/api/ab/list');
+  const container = document.getElementById('ab-container');
+  const empty = document.getElementById('ab-empty');
+
+  if (tests && tests.length > 0) {
+    empty.style.display = 'none';
+    const cards = tests.map(t => {
+      const pctA = t.split_pct || 50;
+      const pctB = 100 - pctA;
+      return `
+        <div class="ab-card" style="margin-bottom: 12px;">
+          <div class="ab-header">
+            <div class="ab-name">${escHtml(t.test_name)}</div>
+            <div class="ab-status">${escHtml(t.status)}</div>
+          </div>
+          <div class="ab-models">
+            <div class="ab-model-card">
+              <div class="ab-model-name">${escHtml(t.model_a)}</div>
+              <div class="ab-model-pct">${pctA}%</div>
+              <div style="font-size: 0.7rem; color: var(--muted); margin-top: 2px;">Model A</div>
+            </div>
+            <div class="ab-vs">VS</div>
+            <div class="ab-model-card">
+              <div class="ab-model-name">${escHtml(t.model_b)}</div>
+              <div class="ab-model-pct">${pctB}%</div>
+              <div style="font-size: 0.7rem; color: var(--muted); margin-top: 2px;">Model B</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+    // Replace content but keep empty element
+    const existingCards = container.querySelectorAll('.ab-card');
+    existingCards.forEach(c => c.remove());
+    container.insertAdjacentHTML('beforeend', cards);
+  } else {
+    empty.style.display = '';
+    const existingCards = container.querySelectorAll('.ab-card');
+    existingCards.forEach(c => c.remove());
+  }
+}
+
+// ---- Refresh System ----
+
+async function refreshSystem() {
+  const [upstreams, cache, budgets, routing] = await Promise.all([
+    apiFetch('/api/upstreams'),
+    apiFetch('/api/cache/stats'),
+    apiFetch('/api/budget/status'),
+    apiFetch('/api/routing/stats'),
+  ]);
+
+  // Upstreams
+  const upTbody = document.getElementById('upstreams-table');
+  const upEmpty = document.getElementById('upstreams-empty');
+  if (upstreams && upstreams.length > 0) {
+    upEmpty.style.display = 'none';
+    upTbody.parentElement.parentElement.style.display = '';
+    upTbody.innerHTML = upstreams.map(u => `<tr>
+      <td><span class="health-dot ${u.is_healthy ? 'healthy' : 'unhealthy'}"></span>${u.is_healthy ? 'Healthy' : 'Down'}</td>
+      <td><span class="badge badge-${escHtml(u.api_type)}">${escHtml(u.api_type)}</span></td>
+      <td style="font-family: monospace; font-size: 0.78rem;">${escHtml(u.base_url)}</td>
+      <td>${u.priority}</td>
+      <td>${u.fail_count || 0}</td>
+    </tr>`).join('');
+  } else {
+    upTbody.parentElement.parentElement.style.display = 'none';
+    upEmpty.style.display = '';
+  }
+
+  // Cache
+  if (cache) {
+    document.getElementById('cache-total').textContent = fmt(cache.total_entries);
+    document.getElementById('cache-active').textContent = fmt(cache.active_entries);
+    document.getElementById('cache-hits').textContent = fmt(cache.total_hits);
+  }
+
+  // Budgets
+  const budgetContainer = document.getElementById('budget-container');
+  const budgetEmpty = document.getElementById('budget-empty');
+  if (budgets && budgets.length > 0) {
+    budgetEmpty.style.display = 'none';
+    const gaugesHtml = budgets.map(b => {
+      const pct = Math.min(b.utilization_pct || 0, 100);
+      let colorClass = 'green';
+      if (pct >= 100) colorClass = 'red';
+      else if (pct >= 80) colorClass = 'yellow';
+      const scope = b.scope_type ? (b.scope_type + (b.scope_value ? ': ' + b.scope_value : '')) : 'global';
+      return `
+        <div class="gauge">
+          <div class="gauge-header">
+            <span class="gauge-label">${escHtml(b.budget_name || scope)}</span>
+            <span class="gauge-value">${money(b.current_spend)} / ${money(b.limit_amount)} (${pct.toFixed(1)}%)</span>
+          </div>
+          <div class="gauge-bar">
+            <div class="gauge-fill ${colorClass}" style="width: ${pct}%"></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+    // Remove old gauges
+    const oldGauges = budgetContainer.querySelectorAll('.gauge');
+    oldGauges.forEach(g => g.remove());
+    budgetContainer.insertAdjacentHTML('beforeend', gaugesHtml);
+  } else {
+    budgetEmpty.style.display = '';
+    const oldGauges = budgetContainer.querySelectorAll('.gauge');
+    oldGauges.forEach(g => g.remove());
+  }
+
+  // Routing
+  const routeTbody = document.getElementById('routing-table');
+  const routeEmpty = document.getElementById('routing-empty');
+  if (routing && routing.length > 0) {
+    routeEmpty.style.display = 'none';
+    routeTbody.parentElement.style.display = '';
+    routeTbody.innerHTML = routing.map(r => `<tr>
+      <td>${escHtml(r.rule_name)}</td>
+      <td><span class="rule-condition">${escHtml(r.target_model)}</span></td>
+      <td>${fmt(r.total_requests)}</td>
+      <td class="money">${money(r.total_cost)}</td>
+      <td>${r.avg_latency_ms != null ? r.avg_latency_ms + 'ms' : '-'}</td>
+    </tr>`).join('');
+  } else {
+    routeTbody.parentElement.style.display = 'none';
+    routeEmpty.style.display = '';
+  }
+}
+
+// ---- Tab-aware refresh ----
+
+function getActiveTab() {
+  return document.querySelector('.tab.active').dataset.tab;
+}
+
+async function refreshActiveTab() {
+  const tab = getActiveTab();
+  if (tab === 'overview') await refreshOverview();
+  else if (tab === 'cost') await refreshCost();
+  else if (tab === 'experiments') await refreshExperiments();
+  else if (tab === 'system') await refreshSystem();
+}
+
+// ---- WebSocket Live Feed ----
+
+let ws = null;
+let wsReconnectTimer = null;
+
+function connectWebSocket() {
+  const wsUrl = `ws://${window.location.hostname}:8877/ws/live`;
+  try {
+    ws = new WebSocket(wsUrl);
+  } catch (e) {
+    console.error('WebSocket creation failed:', e);
+    scheduleReconnect();
+    return;
+  }
+
+  ws.onopen = () => {
+    document.getElementById('ws-dot').classList.add('connected');
+    document.getElementById('ws-label').textContent = 'Live';
+    if (wsReconnectTimer) {
+      clearTimeout(wsReconnectTimer);
+      wsReconnectTimer = null;
+    }
+  };
+
+  ws.onclose = () => {
+    document.getElementById('ws-dot').classList.remove('connected');
+    document.getElementById('ws-label').textContent = 'Disconnected';
+    scheduleReconnect();
+  };
+
+  ws.onerror = () => {
+    document.getElementById('ws-dot').classList.remove('connected');
+    document.getElementById('ws-label').textContent = 'Error';
+  };
+
+  ws.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data);
+      if (msg.type === 'request_complete' || msg.event === 'request_complete') {
+        const data = msg.data || msg;
+        addLiveEvent(data);
+      }
+    } catch (e) {
+      console.error('WS parse error:', e);
+    }
+  };
+}
+
+function scheduleReconnect() {
+  if (!wsReconnectTimer) {
+    wsReconnectTimer = setTimeout(() => {
+      wsReconnectTimer = null;
+      connectWebSocket();
+    }, 5000);
+  }
+}
+
+function addLiveEvent(data) {
+  liveEvents.unshift(data);
+  if (liveEvents.length > MAX_LIVE) liveEvents.pop();
+  renderLiveTicker();
+}
+
+function renderLiveTicker() {
+  const tbody = document.getElementById('live-ticker');
+  const empty = document.getElementById('ticker-empty');
+
+  if (liveEvents.length === 0) {
+    empty.style.display = '';
+    tbody.innerHTML = '';
+    return;
+  }
+
+  empty.style.display = 'none';
+  tbody.innerHTML = liveEvents.map((r, i) => `<tr class="${i === 0 ? 'ticker-row' : ''}">
+    <td>${timeAgo(r.created_at || new Date().toISOString())}</td>
+    <td><span class="badge badge-${escHtml(r.api_type || '')}">${escHtml(r.api_type || '-')}</span></td>
+    <td>${escHtml(r.model || '-')}</td>
+    <td>${fmt(r.input_tokens)}</td>
+    <td>${fmt(r.output_tokens)}</td>
+    <td>${r.latency_ms != null ? r.latency_ms + 'ms' : '-'}</td>
+    <td class="money">${r.estimated_cost != null ? money(r.estimated_cost) : '-'}</td>
+    <td class="truncate" title="${escHtml(r.source_app || '')}">${escHtml((r.source_app || '').slice(0, 30))}</td>
+  </tr>`).join('');
+}
+
+// ---- Boot ----
+
 initCharts();
-refresh();
-setInterval(refresh, 5000);
+refreshOverview();
+connectWebSocket();
+
+// Auto-refresh every 10 seconds
+setInterval(() => {
+  refreshActiveTab();
+}, 10000);
+
 </script>
 </body>
 </html>
