@@ -1,27 +1,44 @@
 """Configuration management for TokenWatch."""
 
 import os
-from pathlib import Path
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# Oracle DB connection
+ORACLE_DSN = os.getenv("TOKENWATCH_ORACLE_DSN", "localhost:1521/FREEPDB1")
+ORACLE_USER = os.getenv("TOKENWATCH_ORACLE_USER", "tokenwatch")
+ORACLE_PASSWORD = os.getenv("TOKENWATCH_ORACLE_PASSWORD", "tokenwatch")
 
-def _expand(path: str) -> Path:
-    return Path(os.path.expanduser(path))
-
-
+# Server ports
 PROXY_PORT = int(os.getenv("TOKENWATCH_PROXY_PORT", "8877"))
 DASHBOARD_PORT = int(os.getenv("TOKENWATCH_DASHBOARD_PORT", "8878"))
-DB_PATH = _expand(os.getenv("TOKENWATCH_DB_PATH", "~/.tokenwatch/usage.db"))
 
+# Upstream API URLs
 ANTHROPIC_UPSTREAM = os.getenv("TOKENWATCH_ANTHROPIC_URL", "https://api.anthropic.com")
 OPENAI_UPSTREAM = os.getenv("TOKENWATCH_OPENAI_URL", "https://api.z.ai")
 
 # Timeouts (seconds)
-CONNECT_TIMEOUT = 10
-OVERALL_TIMEOUT = 300
+CONNECT_TIMEOUT = int(os.getenv("TOKENWATCH_CONNECT_TIMEOUT", "10"))
+OVERALL_TIMEOUT = int(os.getenv("TOKENWATCH_OVERALL_TIMEOUT", "300"))
+
+# Cache settings
+CACHE_ENABLED = os.getenv("TOKENWATCH_CACHE_ENABLED", "true").lower() == "true"
+CACHE_TTL = int(os.getenv("TOKENWATCH_CACHE_TTL", "86400"))
+CACHE_SIMILARITY_THRESHOLD = float(os.getenv("TOKENWATCH_CACHE_SIMILARITY_THRESHOLD", "0.05"))
+
+# Prompt storage
+STORE_PROMPTS = os.getenv("TOKENWATCH_STORE_PROMPTS", "false").lower() == "true"
+PROMPT_RETENTION_DAYS = int(os.getenv("TOKENWATCH_PROMPT_RETENTION_DAYS", "30"))
+
+# Budget
+BUDGET_ENABLED = os.getenv("TOKENWATCH_BUDGET_ENABLED", "true").lower() == "true"
+
+# OpenTelemetry
+OTEL_ENABLED = os.getenv("TOKENWATCH_OTEL_ENABLED", "false").lower() == "true"
+OTEL_ENDPOINT = os.getenv("TOKENWATCH_OTEL_ENDPOINT", "http://localhost:4317")
+OTEL_SERVICE_NAME = os.getenv("TOKENWATCH_OTEL_SERVICE_NAME", "tokenwatch")
 
 # Cost per 1M tokens (input, output) in USD
 MODEL_PRICING: dict[str, tuple[float, float]] = {
