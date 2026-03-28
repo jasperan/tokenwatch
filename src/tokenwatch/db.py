@@ -402,6 +402,26 @@ class Database:
                     for r in rows
                 ]
 
+    async def get_tag_rules(self) -> list[dict]:
+        """Return active auto-tagging rules ordered by priority."""
+        sql = """SELECT priority, condition_type, condition_value, target_model
+                 FROM routing_rules
+                 WHERE is_active = 1 AND condition_type LIKE 'tag_%'
+                 ORDER BY priority"""
+        async with self._pool.acquire() as conn:
+            with conn.cursor() as cur:
+                await cur.execute(sql)
+                rows = await cur.fetchall()
+                return [
+                    {
+                        "priority": row[0],
+                        "condition_type": row[1],
+                        "condition_value": row[2] or "",
+                        "tag": row[3] or "",
+                    }
+                    for row in rows
+                ]
+
     async def add_routing_rule(self, rule: RoutingRule) -> int:
         """Insert a routing rule and return its id."""
         sql = """INSERT INTO routing_rules (rule_name, priority, condition_type, condition_value,

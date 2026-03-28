@@ -29,7 +29,9 @@ from .interceptor import (
     parse_openai_response,
     parse_openai_sse_event,
 )
+from .privacy import sanitize_stored_payload
 from .router import evaluate_ab_test, evaluate_routing
+from .tagging import auto_tag
 from .ws import ConnectionManager
 
 logger = logging.getLogger("tokenwatch")
@@ -96,6 +98,18 @@ def _session_id(request: Request) -> str:
 
 def _feature_tag(request: Request) -> str:
     return request.headers.get("x-tokenwatch-tag", "")
+
+
+async def _resolve_feature_tag(db: Database, explicit_tag: str, source_app: str, first_message: str) -> str:
+    """Resolve the request tag from the header first, then auto-tag rules."""
+    if explicit_tag:
+        return explicit_tag
+    try:
+        rules = await db.get_tag_rules()
+    except Exception:
+        logger.exception("Failed to load tag rules")
+        return explicit_tag
+    return auto_tag(source_app, first_message, rules)
 
 
 def _parse_json_body(body_or_data: bytes | dict | None) -> dict | None:
@@ -221,6 +235,7 @@ async def _proxy_request(request: Request, path: str, body: bytes, api_type: str
     info = _extract_request_info(parsed_body if parsed_body is not None else body)
     requested_model = info["model"]
     is_streaming = _is_streaming(parsed_body if parsed_body is not None else body)
+    feature_tag = await _resolve_feature_tag(db, feature_tag, source_app, info["first_message"])
 
     extra_headers = {}
 
@@ -384,7 +399,9 @@ async def _proxy_non_streaming(
     if STORE_PROMPTS and resp.status_code == 200:
         try:
             p_hash = hash_prompt(normalize_prompt(body, api_type))
-            await db.store_prompt(record.request_id, body.decode("utf-8", errors="replace"), resp_body.decode("utf-8", errors="replace"), p_hash)
+            request_body = sanitize_stored_payload(body.decode("utf-8", errors="replace"))
+            response_body = sanitize_stored_payload(resp_body.decode("utf-8", errors="replace"))
+            await db.store_prompt(record.request_id, request_body, response_body, p_hash)
         except Exception:
             logger.exception("Failed to store prompt")
 

@@ -1,7 +1,9 @@
 """CLI interface for TokenWatch."""
 
 import asyncio
+import json
 import logging
+from pathlib import Path
 
 import click
 import uvicorn
@@ -68,6 +70,37 @@ def start(host, proxy_port, dashboard_port, log_level):
         port=proxy_port,
         log_level=log_level,
     )
+
+
+# --- Explain ---
+
+@cli.command("explain-request")
+@click.option("--api-type", required=True, type=click.Choice(["anthropic", "openai"]))
+@click.option("--body-file", required=True, type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--source-app", default="tokenwatch-explain", help="Source app / user-agent to simulate")
+@click.option("--feature-tag", default="", help="Explicit feature tag override")
+def explain_request(api_type, body_file, source_app, feature_tag):
+    """Explain how TokenWatch would handle a request without forwarding it."""
+    _run(_explain_request(api_type, body_file, source_app, feature_tag))
+
+
+async def _explain_request(api_type, body_file, source_app, feature_tag):
+    from .explain import build_request_explanation
+
+    db = Database()
+    await db.init()
+    try:
+        explanation = await build_request_explanation(
+            db,
+            api_type=api_type,
+            body=body_file.read_bytes(),
+            source_app=source_app,
+            feature_tag=feature_tag,
+        )
+    finally:
+        await db.close()
+
+    console.print(json.dumps(explanation, indent=2))
 
 
 # --- Stats ---

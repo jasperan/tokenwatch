@@ -31,6 +31,7 @@ CACHE_SIMILARITY_THRESHOLD = float(os.getenv("TOKENWATCH_CACHE_SIMILARITY_THRESH
 
 # Prompt storage
 STORE_PROMPTS = os.getenv("TOKENWATCH_STORE_PROMPTS", "false").lower() == "true"
+REDACT_STORED_PROMPTS = os.getenv("TOKENWATCH_REDACT_STORED_PROMPTS", "true").lower() == "true"
 PROMPT_RETENTION_DAYS = int(os.getenv("TOKENWATCH_PROMPT_RETENTION_DAYS", "30"))
 
 # Budget
