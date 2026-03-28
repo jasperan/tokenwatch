@@ -1,6 +1,5 @@
 """Async Oracle database layer for TokenWatch."""
 
-import json
 import logging
 from pathlib import Path
 

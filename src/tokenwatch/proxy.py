@@ -11,13 +11,11 @@ from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import Response, StreamingResponse
 
 from .budget import check_budget_gate
-from .cache import cache_lookup, cache_store_response, extract_model, normalize_prompt, hash_prompt
+from .cache import cache_lookup, cache_store_response, normalize_prompt, hash_prompt
 from .config import (
-    ANTHROPIC_UPSTREAM,
     BUDGET_ENABLED,
     CACHE_ENABLED,
     CONNECT_TIMEOUT,
-    OPENAI_UPSTREAM,
     OVERALL_TIMEOUT,
     STORE_PROMPTS,
     estimate_cost,
