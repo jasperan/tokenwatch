@@ -275,28 +275,61 @@ class Database:
                 await cur.execute("DELETE FROM budgets WHERE id = :1", [budget_id])
             await conn.commit()
 
+    def _budget_matches_request(
+        self,
+        budget: BudgetRecord,
+        source_app: str,
+        model: str,
+        feature_tag: str,
+    ) -> bool:
+        """Return True when a budget applies to the current request."""
+        if budget.scope == "global":
+            return True
+        if budget.scope == "app":
+            return bool(budget.scope_value) and source_app == budget.scope_value
+        if budget.scope == "model":
+            return bool(budget.scope_value) and model == budget.scope_value
+        if budget.scope == "tag":
+            return bool(budget.scope_value) and feature_tag == budget.scope_value
+        return False
+
+    def _budget_result_entry(self, budget: BudgetRecord, spend: float, action: str | None = None) -> dict:
+        """Normalize a budget result for proxy and dashboard consumers."""
+        return {
+            "budget_id": budget.id,
+            "scope": budget.scope,
+            "scope_value": budget.scope_value,
+            "limit": float(budget.limit_amount),
+            "spent": float(spend),
+            "period": budget.period,
+            "action": action or budget.action_on_limit,
+            "webhook_url": budget.webhook_url,
+        }
+
     async def check_budget(self, source_app: str, model: str, feature_tag: str) -> dict:
-        """Check all active budgets and return allow/block decision."""
+        """Check matching active budgets and return allow/block decision."""
         budgets = await self.get_budgets()
         warnings = []
         blocking_budget = None
 
         for b in budgets:
-            if not b.is_active:
+            if not b.is_active or not self._budget_matches_request(b, source_app, model, feature_tag):
                 continue
+
             spend = await self._get_period_spend(b)
             if spend >= b.limit_amount:
+                result = self._budget_result_entry(b, spend)
                 if b.action_on_limit == "block":
-                    blocking_budget = b
+                    blocking_budget = result
                     break
-                warnings.append({"budget_id": b.id, "spend": spend, "limit": b.limit_amount})
+                warnings.append(result)
             elif spend >= b.limit_amount * 0.8:
-                warnings.append({"budget_id": b.id, "spend": spend, "limit": b.limit_amount})
+                warnings.append(self._budget_result_entry(b, spend, action="approaching"))
 
         return {
             "allowed": blocking_budget is None,
             "warnings": warnings,
-            "blocking_budget": blocking_budget.model_dump() if blocking_budget else None,
+            "blocking_budget": blocking_budget,
         }
 
     async def _get_period_spend(self, budget: BudgetRecord) -> float:
