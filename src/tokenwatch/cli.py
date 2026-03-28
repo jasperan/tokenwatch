@@ -11,7 +11,7 @@ from rich.table import Table
 from rich.live import Live
 
 from . import __version__
-from .config import DASHBOARD_PORT, ORACLE_DSN, ORACLE_USER, PROXY_PORT
+from .config import DASHBOARD_PORT, HOST, ORACLE_DSN, ORACLE_USER, PROXY_PORT
 from .db import Database
 from .models import BudgetRecord, RoutingRule, ABTest, Upstream
 
@@ -33,23 +33,24 @@ def cli():
 # --- Start ---
 
 @cli.command()
+@click.option("--host", default=HOST, help="Bind host")
 @click.option("--proxy-port", default=PROXY_PORT, help="Proxy port")
 @click.option("--dashboard-port", default=DASHBOARD_PORT, help="Dashboard port")
 @click.option("--log-level", default="info", type=click.Choice(["debug", "info", "warning", "error"]))
-def start(proxy_port, dashboard_port, log_level):
+def start(host, proxy_port, dashboard_port, log_level):
     """Start the TokenWatch proxy and dashboard servers."""
     logging.basicConfig(
         level=getattr(logging, log_level.upper()),
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     )
     console.print(f"[bold green]TokenWatch v{__version__}[/]")
-    console.print(f"  Proxy:     http://localhost:{proxy_port}")
-    console.print(f"  Dashboard: http://localhost:{dashboard_port}")
+    console.print(f"  Proxy:     http://{host}:{proxy_port}")
+    console.print(f"  Dashboard: http://{host}:{dashboard_port}")
     console.print(f"  Oracle DB: {ORACLE_DSN} (user: {ORACLE_USER})")
     console.print()
     console.print("[dim]Configure your apps to use:[/]")
-    console.print(f"[dim]  Anthropic: http://localhost:{proxy_port}/anthropic[/dim]")
-    console.print(f"[dim]  OpenAI:    http://localhost:{proxy_port}/openai[/dim]")
+    console.print(f"[dim]  Anthropic: http://{host}:{proxy_port}/anthropic[/dim]")
+    console.print(f"[dim]  OpenAI:    http://{host}:{proxy_port}/openai[/dim]")
     console.print()
 
     import threading
@@ -57,14 +58,14 @@ def start(proxy_port, dashboard_port, log_level):
     def run_dashboard():
         from .dashboard_app import create_dashboard_app
         dash_app = create_dashboard_app()
-        uvicorn.run(dash_app, host="0.0.0.0", port=dashboard_port, log_level=log_level)
+        uvicorn.run(dash_app, host=host, port=dashboard_port, log_level=log_level)
 
     dash_thread = threading.Thread(target=run_dashboard, daemon=True)
     dash_thread.start()
 
     uvicorn.run(
         "tokenwatch.proxy:app",
-        host="0.0.0.0",
+        host=host,
         port=proxy_port,
         log_level=log_level,
     )

@@ -54,13 +54,18 @@ class Database:
     """Oracle async database interface for TokenWatch."""
 
     def __init__(self, dsn=None, user=None, password=None):
-        self._dsn = dsn or ORACLE_DSN
-        self._user = user or ORACLE_USER
-        self._password = password or ORACLE_PASSWORD
+        self._dsn = ORACLE_DSN if dsn is None else dsn
+        self._user = ORACLE_USER if user is None else user
+        self._password = ORACLE_PASSWORD if password is None else password
         self._pool: oracledb.AsyncConnectionPool | None = None
 
     async def init(self):
         """Create async connection pool and ensure schema exists."""
+        if not self._user or not self._password:
+            raise RuntimeError(
+                "TOKENWATCH_ORACLE_USER and TOKENWATCH_ORACLE_PASSWORD must be set before starting TokenWatch"
+            )
+
         self._pool = oracledb.create_pool_async(
             dsn=self._dsn,
             user=self._user,

@@ -8,10 +8,11 @@ load_dotenv()
 
 # Oracle DB connection
 ORACLE_DSN = os.getenv("TOKENWATCH_ORACLE_DSN", "localhost:1521/FREEPDB1")
-ORACLE_USER = os.getenv("TOKENWATCH_ORACLE_USER", "tokenwatch")
-ORACLE_PASSWORD = os.getenv("TOKENWATCH_ORACLE_PASSWORD", "tokenwatch")
+ORACLE_USER = os.getenv("TOKENWATCH_ORACLE_USER", "")
+ORACLE_PASSWORD = os.getenv("TOKENWATCH_ORACLE_PASSWORD", "")
 
 # Server ports
+HOST = os.getenv("TOKENWATCH_HOST", "127.0.0.1")
 PROXY_PORT = int(os.getenv("TOKENWATCH_PROXY_PORT", "8877"))
 DASHBOARD_PORT = int(os.getenv("TOKENWATCH_DASHBOARD_PORT", "8878"))
 
@@ -24,7 +25,7 @@ CONNECT_TIMEOUT = int(os.getenv("TOKENWATCH_CONNECT_TIMEOUT", "10"))
 OVERALL_TIMEOUT = int(os.getenv("TOKENWATCH_OVERALL_TIMEOUT", "300"))
 
 # Cache settings
-CACHE_ENABLED = os.getenv("TOKENWATCH_CACHE_ENABLED", "true").lower() == "true"
+CACHE_ENABLED = os.getenv("TOKENWATCH_CACHE_ENABLED", "false").lower() == "true"
 CACHE_TTL = int(os.getenv("TOKENWATCH_CACHE_TTL", "86400"))
 CACHE_SIMILARITY_THRESHOLD = float(os.getenv("TOKENWATCH_CACHE_SIMILARITY_THRESHOLD", "0.05"))
 
