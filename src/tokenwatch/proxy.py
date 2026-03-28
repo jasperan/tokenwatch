@@ -100,18 +100,27 @@ def _feature_tag(request: Request) -> str:
     return request.headers.get("x-tokenwatch-tag", "")
 
 
-def _is_streaming(body: bytes) -> bool:
+def _parse_json_body(body_or_data: bytes | dict | None) -> dict | None:
+    """Return parsed request JSON or None for invalid payloads."""
+    if isinstance(body_or_data, dict):
+        return body_or_data
+    if not body_or_data:
+        return None
     try:
-        return json.loads(body).get("stream", False) if body else False
+        return json.loads(body_or_data)
     except (json.JSONDecodeError, ValueError):
-        return False
+        return None
 
 
-def _extract_request_info(body: bytes) -> dict:
+def _is_streaming(body_or_data: bytes | dict) -> bool:
+    data = _parse_json_body(body_or_data)
+    return bool(data and data.get("stream", False))
+
+
+def _extract_request_info(body_or_data: bytes | dict) -> dict:
     """Extract model, first message content, and estimated token count from request body."""
-    try:
-        data = json.loads(body)
-    except (json.JSONDecodeError, ValueError):
+    data = _parse_json_body(body_or_data)
+    if data is None:
         return {"model": "", "first_message": "", "est_tokens": 0}
 
     model = data.get("model", "")
@@ -127,18 +136,20 @@ def _extract_request_info(body: bytes) -> dict:
                     first_message = block.get("text", "")
                     break
 
-    est_tokens = len(json.dumps(data)) // 4
+    if isinstance(body_or_data, (bytes, bytearray)):
+        est_tokens = len(body_or_data) // 4
+    else:
+        est_tokens = len(json.dumps(data, separators=(",", ":"))) // 4
     return {"model": model, "first_message": first_message, "est_tokens": est_tokens}
 
 
-def _rewrite_model_in_body(body: bytes, new_model: str) -> bytes:
+def _rewrite_model_in_body(body: bytes, new_model: str, body_data: dict | None = None) -> bytes:
     """Rewrite the model field in the request body JSON."""
-    try:
-        data = json.loads(body)
-        data["model"] = new_model
-        return json.dumps(data).encode()
-    except (json.JSONDecodeError, ValueError):
+    data = _parse_json_body(body_data if body_data is not None else body)
+    if data is None:
         return body
+    data["model"] = new_model
+    return json.dumps(data, separators=(",", ":")).encode()
 
 
 def _build_upstream_url(base_url: str, path: str, query: str) -> str:
@@ -208,8 +219,10 @@ async def _proxy_request(request: Request, path: str, body: bytes, api_type: str
     feature_tag = _feature_tag(request)
     headers = _forward_headers(request.headers)
     start = time.monotonic()
-    info = _extract_request_info(body)
+    parsed_body = _parse_json_body(body)
+    info = _extract_request_info(parsed_body if parsed_body is not None else body)
     requested_model = info["model"]
+    is_streaming = _is_streaming(parsed_body if parsed_body is not None else body)
 
     extra_headers = {}
 
@@ -225,8 +238,8 @@ async def _proxy_request(request: Request, path: str, body: bytes, api_type: str
         extra_headers.update(budget_result["headers"])
 
     # --- Stage 2: Cache lookup ---
-    if CACHE_ENABLED and not _is_streaming(body):
-        cache_result = await cache_lookup(db, body, api_type)
+    if CACHE_ENABLED and not is_streaming:
+        cache_result = await cache_lookup(db, parsed_body if parsed_body is not None else body, api_type)
         if cache_result:
             latency_ms = int((time.monotonic() - start) * 1000)
             # Log cache hit
@@ -274,7 +287,8 @@ async def _proxy_request(request: Request, path: str, body: bytes, api_type: str
     if routing_decision.was_rerouted:
         routed_model = routing_decision.model
         routing_rule_id = routing_decision.rule_id
-        body = _rewrite_model_in_body(body, routed_model)
+        body = _rewrite_model_in_body(body, routed_model, parsed_body)
+        parsed_body = _parse_json_body(body)
         extra_headers["X-TokenWatch-Requested-Model"] = requested_model
         extra_headers["X-TokenWatch-Routed-Model"] = routed_model
         extra_headers["X-TokenWatch-Routing-Rule"] = routing_decision.rule_name
@@ -287,7 +301,8 @@ async def _proxy_request(request: Request, path: str, body: bytes, api_type: str
         if ab_id is not None:
             routed_model = ab_model
             ab_test_id = ab_id
-            body = _rewrite_model_in_body(body, routed_model)
+            body = _rewrite_model_in_body(body, routed_model, parsed_body)
+            parsed_body = _parse_json_body(body)
             extra_headers["X-TokenWatch-AB-Test"] = str(ab_id)
 
     # --- Stage 4: Upstream selection ---
@@ -297,7 +312,7 @@ async def _proxy_request(request: Request, path: str, body: bytes, api_type: str
     client = await get_client()
 
     # --- Stage 5: Forward request ---
-    if _is_streaming(body):
+    if is_streaming:
         return await _proxy_streaming(
             client, request.method, base_urls, path, request.url.query, headers, body,
             api_type, source_app, session_id, feature_tag,
