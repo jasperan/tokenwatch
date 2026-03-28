@@ -23,7 +23,7 @@ from .config import (
     estimate_cost,
 )
 from .db import Database
-from .failover import get_upstream_url, health_check_loop, report_upstream_failure, report_upstream_success
+from .failover import get_upstream_candidates, health_check_loop, report_upstream_failure, report_upstream_success
 from .interceptor import (
     new_streaming_record,
     parse_anthropic_response,
@@ -139,6 +139,29 @@ def _rewrite_model_in_body(body: bytes, new_model: str) -> bytes:
         return json.dumps(data).encode()
     except (json.JSONDecodeError, ValueError):
         return body
+
+
+def _build_upstream_url(base_url: str, path: str, query: str) -> str:
+    """Build the upstream URL for a proxied request."""
+    upstream_url = f"{base_url}/{path}"
+    if query:
+        upstream_url += f"?{query}"
+    return upstream_url
+
+
+def _upstream_error_response(error_type: str) -> Response:
+    """Create a consistent upstream failure response."""
+    if error_type == "timeout":
+        return Response(
+            content=json.dumps({"error": "TokenWatch: upstream timeout"}).encode(),
+            status_code=504,
+            media_type="application/json",
+        )
+    return Response(
+        content=json.dumps({"error": "TokenWatch: cannot connect to upstream"}).encode(),
+        status_code=502,
+        media_type="application/json",
+    )
 
 
 # --- WebSocket endpoint ---
@@ -269,55 +292,57 @@ async def _proxy_request(request: Request, path: str, body: bytes, api_type: str
 
     # --- Stage 4: Upstream selection ---
     override_upstream = routing_decision.upstream if routing_decision.was_rerouted else ""
-    base_url = await get_upstream_url(db, api_type, override_upstream)
-    upstream_url = f"{base_url}/{path}"
-    if request.url.query:
-        upstream_url += f"?{request.url.query}"
+    base_urls = await get_upstream_candidates(db, api_type, override_upstream)
 
     client = await get_client()
 
     # --- Stage 5: Forward request ---
     if _is_streaming(body):
         return await _proxy_streaming(
-            client, request.method, upstream_url, headers, body,
+            client, request.method, base_urls, path, request.url.query, headers, body,
             api_type, source_app, session_id, feature_tag,
             requested_model, routed_model, routing_rule_id, ab_test_id,
-            start, extra_headers, base_url,
+            start, extra_headers,
         )
     return await _proxy_non_streaming(
-        client, request.method, upstream_url, headers, body,
+        client, request.method, base_urls, path, request.url.query, headers, body,
         api_type, source_app, session_id, feature_tag,
         requested_model, routed_model, routing_rule_id, ab_test_id,
-        start, extra_headers, base_url,
+        start, extra_headers,
     )
 
 
 async def _proxy_non_streaming(
-    client, method, url, headers, body,
+    client, method, base_urls, path, query, headers, body,
     api_type, source_app, session_id, feature_tag,
     requested_model, routed_model, routing_rule_id, ab_test_id,
-    start, extra_headers, base_url,
+    start, extra_headers,
 ):
     parse_fn = parse_anthropic_response if api_type == "anthropic" else parse_openai_response
 
-    try:
-        resp = await client.request(method, url, headers=headers, content=body)
-    except httpx.ConnectError:
-        logger.error("Cannot connect to upstream: %s", url)
-        await report_upstream_failure(db, api_type, base_url)
-        return Response(
-            content=json.dumps({"error": "TokenWatch: cannot connect to upstream"}).encode(),
-            status_code=502, media_type="application/json",
-        )
-    except httpx.TimeoutException:
-        logger.error("Upstream timeout: %s", url)
-        await report_upstream_failure(db, api_type, base_url)
-        return Response(
-            content=json.dumps({"error": "TokenWatch: upstream timeout"}).encode(),
-            status_code=504, media_type="application/json",
-        )
+    resp = None
+    selected_base_url = None
+    last_error_type = "connect"
 
-    await report_upstream_success(db, api_type, base_url)
+    for base_url in base_urls:
+        url = _build_upstream_url(base_url, path, query)
+        try:
+            resp = await client.request(method, url, headers=headers, content=body)
+            selected_base_url = base_url
+            break
+        except httpx.ConnectError:
+            last_error_type = "connect"
+            logger.error("Cannot connect to upstream: %s", url)
+            await report_upstream_failure(db, api_type, base_url)
+        except httpx.TimeoutException:
+            last_error_type = "timeout"
+            logger.error("Upstream timeout: %s", url)
+            await report_upstream_failure(db, api_type, base_url)
+
+    if resp is None or selected_base_url is None:
+        return _upstream_error_response(last_error_type)
+
+    await report_upstream_success(db, api_type, selected_base_url)
     latency_ms = int((time.monotonic() - start) * 1000)
     resp_body = resp.content
 
@@ -378,32 +403,37 @@ async def _proxy_non_streaming(
 
 
 async def _proxy_streaming(
-    client, method, url, headers, body,
+    client, method, base_urls, path, query, headers, body,
     api_type, source_app, session_id, feature_tag,
     requested_model, routed_model, routing_rule_id, ab_test_id,
-    start, extra_headers, base_url,
+    start, extra_headers,
 ):
     parse_event_fn = parse_anthropic_sse_event if api_type == "anthropic" else parse_openai_sse_event
 
-    try:
-        req = client.build_request(method, url, headers=headers, content=body)
-        resp = await client.send(req, stream=True)
-    except httpx.ConnectError:
-        logger.error("Cannot connect to upstream: %s", url)
-        await report_upstream_failure(db, api_type, base_url)
-        return Response(
-            content=json.dumps({"error": "TokenWatch: cannot connect to upstream"}).encode(),
-            status_code=502, media_type="application/json",
-        )
-    except httpx.TimeoutException:
-        logger.error("Upstream timeout: %s", url)
-        await report_upstream_failure(db, api_type, base_url)
-        return Response(
-            content=json.dumps({"error": "TokenWatch: upstream timeout"}).encode(),
-            status_code=504, media_type="application/json",
-        )
+    resp = None
+    selected_base_url = None
+    last_error_type = "connect"
 
-    await report_upstream_success(db, api_type, base_url)
+    for base_url in base_urls:
+        url = _build_upstream_url(base_url, path, query)
+        try:
+            req = client.build_request(method, url, headers=headers, content=body)
+            resp = await client.send(req, stream=True)
+            selected_base_url = base_url
+            break
+        except httpx.ConnectError:
+            last_error_type = "connect"
+            logger.error("Cannot connect to upstream: %s", url)
+            await report_upstream_failure(db, api_type, base_url)
+        except httpx.TimeoutException:
+            last_error_type = "timeout"
+            logger.error("Upstream timeout: %s", url)
+            await report_upstream_failure(db, api_type, base_url)
+
+    if resp is None or selected_base_url is None:
+        return _upstream_error_response(last_error_type)
+
+    await report_upstream_success(db, api_type, selected_base_url)
 
     record = new_streaming_record(api_type, source_app)
     record.status_code = resp.status_code

@@ -1,5 +1,6 @@
 """Tests for the WebSocket connection manager."""
 
+import asyncio
 import json
 
 import pytest
@@ -47,3 +48,17 @@ async def test_connection_manager_disconnect_is_idempotent():
     manager.disconnect(websocket)
 
     assert manager.active_connections == []
+
+
+@pytest.mark.asyncio
+async def test_connection_manager_handles_concurrent_broadcasts():
+    manager = ConnectionManager()
+    websocket = FakeWebSocket()
+
+    await manager.connect(websocket)
+    await asyncio.gather(
+        manager.broadcast({"type": "first"}),
+        manager.broadcast({"type": "second"}),
+    )
+
+    assert sorted(json.loads(message)["type"] for message in websocket.messages) == ["first", "second"]
