@@ -10,11 +10,22 @@ from .db import Database
 logger = logging.getLogger("tokenwatch")
 
 
-def normalize_prompt(body: bytes, api_type: str) -> str:
-    """Extract and normalize semantic content from request body."""
+def _load_request_json(body_or_data: bytes | dict | None) -> dict | None:
+    """Return parsed request JSON or None for invalid payloads."""
+    if isinstance(body_or_data, dict):
+        return body_or_data
+    if not body_or_data:
+        return None
     try:
-        data = json.loads(body)
+        return json.loads(body_or_data)
     except (json.JSONDecodeError, ValueError):
+        return None
+
+
+def normalize_prompt(body_or_data: bytes | dict, api_type: str) -> str:
+    """Extract and normalize semantic content from request body."""
+    data = _load_request_json(body_or_data)
+    if data is None:
         return ""
 
     parts = []
@@ -50,22 +61,21 @@ def hash_prompt(normalized: str) -> str:
     return hashlib.sha256(normalized.encode()).hexdigest()
 
 
-def should_cache(body: bytes) -> bool:
+def should_cache(body_or_data: bytes | dict) -> bool:
     """Determine if this request should use cache (skip if temperature > 0)."""
-    try:
-        data = json.loads(body)
-        temp = data.get("temperature", 0)
-        return temp == 0 or temp is None
-    except (json.JSONDecodeError, ValueError):
+    data = _load_request_json(body_or_data)
+    if data is None:
         return False
+    temp = data.get("temperature", 0)
+    return temp == 0 or temp is None
 
 
-def extract_model(body: bytes) -> str:
+def extract_model(body_or_data: bytes | dict) -> str:
     """Extract model name from request body."""
-    try:
-        return json.loads(body).get("model", "")
-    except (json.JSONDecodeError, ValueError):
+    data = _load_request_json(body_or_data)
+    if data is None:
         return ""
+    return data.get("model", "")
 
 
 async def generate_embedding(db: Database, text: str) -> list[float] | None:
@@ -92,17 +102,18 @@ async def generate_embedding(db: Database, text: str) -> list[float] | None:
     return None
 
 
-async def cache_lookup(db: Database, body: bytes, api_type: str) -> dict | None:
+async def cache_lookup(db: Database, body_or_data: bytes | dict, api_type: str) -> dict | None:
     """Look up cached response for this prompt. Returns None on miss."""
-    if not should_cache(body):
+    data = _load_request_json(body_or_data)
+    if data is None or not should_cache(data):
         return None
 
-    normalized = normalize_prompt(body, api_type)
+    normalized = normalize_prompt(data, api_type)
     if not normalized:
         return None
 
     prompt_hash = hash_prompt(normalized)
-    model = extract_model(body)
+    model = extract_model(data)
 
     # Tier 1: exact match
     result = await db.cache_lookup_exact(prompt_hash, model)
@@ -121,17 +132,18 @@ async def cache_lookup(db: Database, body: bytes, api_type: str) -> dict | None:
     return None
 
 
-async def cache_store_response(db: Database, body: bytes, api_type: str, response_body: str):
+async def cache_store_response(db: Database, body_or_data: bytes | dict, api_type: str, response_body: str):
     """Store a response in the cache after a successful upstream call."""
-    if not should_cache(body):
+    data = _load_request_json(body_or_data)
+    if data is None or not should_cache(data):
         return
 
-    normalized = normalize_prompt(body, api_type)
+    normalized = normalize_prompt(data, api_type)
     if not normalized:
         return
 
     prompt_hash = hash_prompt(normalized)
-    model = extract_model(body)
+    model = extract_model(data)
 
     embedding = await generate_embedding(db, normalized)
     if embedding:

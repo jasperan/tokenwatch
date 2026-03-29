@@ -2,7 +2,6 @@
 
 import json
 import logging
-import time
 import uuid
 
 from .config import estimate_cost
@@ -93,8 +92,7 @@ def parse_openai_sse_event(event_text: str, record: UsageRecord):
                 continue
             if not record.model:
                 record.model = data.get("model", "")
-            if not record.request_id:
-                record.request_id = data.get("id", "")
+            record.request_id = data.get("id", record.request_id)
             # OpenAI includes usage in the final chunk when stream_options.include_usage=true
             usage = data.get("usage")
             if usage:

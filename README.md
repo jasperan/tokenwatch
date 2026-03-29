@@ -29,33 +29,64 @@ v2 bolts on Oracle AI Vector Search for semantic caching, a budget kill switch, 
 
 ## Quick Start
 
-Start Oracle DB 26ai Free:
+### 1. Start Oracle DB 26ai Free
+
+Pick a strong system password and reuse that value in the setup command below.
 
 ```bash
-docker run -d --name oracle-free \
-  -p 1521:1521 \
-  -e ORACLE_PWD=tokenwatch \
-  container-registry.oracle.com/database/free:latest
+docker run -d --name oracle-free -p 1521:1521 -e ORACLE_PWD='YOUR_ORACLE_SYSTEM_PASSWORD' container-registry.oracle.com/database/free:latest  # pragma: allowlist secret
 ```
 
-Install and run:
+If you already have an `oracle-free` container running on a different host port, use that mapped port in the DSN instead of assuming `1521`:
+
+```bash
+docker port oracle-free 1521
+# Example output: 0.0.0.0:1523
+```
+
+### 2. Create an application user for TokenWatch
+
+TokenWatch does **not** ship with weak default DB credentials anymore. Replace the placeholder passwords below with your real values and create a dedicated user first:
+
+```bash
+docker exec oracle-free bash -lc "cat <<'SQL' | sqlplus -s system/YOUR_ORACLE_SYSTEM_PASSWORD@localhost:1521/FREEPDB1  # pragma: allowlist secret
+whenever sqlerror exit failure
+begin
+  execute immediate 'create user TOKENWATCH identified by YOUR_TOKENWATCH_DB_PASSWORD'; -- pragma: allowlist secret
+exception
+  when others then
+    if sqlcode != -1920 then raise; end if;
+end;
+/
+alter user TOKENWATCH identified by YOUR_TOKENWATCH_DB_PASSWORD; -- pragma: allowlist secret
+grant connect, resource to TOKENWATCH;
+grant create session, create table, create view, create sequence, create procedure to TOKENWATCH;
+exit
+SQL"
+```
+
+If your container is mapped to another host port, keep the SQL command as-is inside the container, but export the host-side DSN with the mapped port.
+
+### 3. Install and run TokenWatch
 
 ```bash
 pip install -e .
 
 export TOKENWATCH_ORACLE_DSN="localhost:1521/FREEPDB1"
-export TOKENWATCH_ORACLE_USER="tokenwatch"
-export TOKENWATCH_ORACLE_PASSWORD="tokenwatch"
+export TOKENWATCH_ORACLE_USER="TOKENWATCH"
+export TOKENWATCH_ORACLE_PASSWORD="YOUR_TOKENWATCH_DB_PASSWORD"  # pragma: allowlist secret
 
 tokenwatch start
 ```
 
+By default, TokenWatch binds to `127.0.0.1`. If you need another interface, pass `--host` or set `TOKENWATCH_HOST`.
+
 Point your apps at the proxy:
 
-- Anthropic: `http://localhost:8877/anthropic`
-- OpenAI: `http://localhost:8877/openai`
+- Anthropic: `http://127.0.0.1:8877/anthropic`
+- OpenAI: `http://127.0.0.1:8877/openai`
 
-Open `http://localhost:8878` for the dashboard.
+Open `http://127.0.0.1:8878` for the dashboard.
 
 ## Configuration
 
@@ -64,18 +95,20 @@ All settings via environment variables or `.env` file:
 | Variable | Default | Description |
 |---|---|---|
 | `TOKENWATCH_ORACLE_DSN` | `localhost:1521/FREEPDB1` | Oracle DB connection string |
-| `TOKENWATCH_ORACLE_USER` | `tokenwatch` | Oracle DB username |
-| `TOKENWATCH_ORACLE_PASSWORD` | `tokenwatch` | Oracle DB password |
+| `TOKENWATCH_ORACLE_USER` | `""` | Oracle DB username. Required. No insecure default. |
+| `TOKENWATCH_ORACLE_PASSWORD` | `""` | Oracle DB password. Required. No insecure default. |
+| `TOKENWATCH_HOST` | `127.0.0.1` | Bind host for proxy and dashboard |
 | `TOKENWATCH_PROXY_PORT` | `8877` | Proxy listen port |
 | `TOKENWATCH_DASHBOARD_PORT` | `8878` | Dashboard listen port |
 | `TOKENWATCH_ANTHROPIC_URL` | `https://api.anthropic.com` | Anthropic upstream URL |
 | `TOKENWATCH_OPENAI_URL` | `https://api.z.ai` | OpenAI-compatible upstream URL |
 | `TOKENWATCH_CONNECT_TIMEOUT` | `10` | Connection timeout (seconds) |
 | `TOKENWATCH_OVERALL_TIMEOUT` | `300` | Overall request timeout (seconds) |
-| `TOKENWATCH_CACHE_ENABLED` | `true` | Enable semantic prompt caching |
+| `TOKENWATCH_CACHE_ENABLED` | `false` | Enable semantic prompt caching |
 | `TOKENWATCH_CACHE_TTL` | `86400` | Cache entry TTL (seconds) |
 | `TOKENWATCH_CACHE_SIMILARITY_THRESHOLD` | `0.05` | Vector distance threshold for cache hits (lower = stricter) |
-| `TOKENWATCH_STORE_PROMPTS` | `false` | Store full prompt text for replay |
+| `TOKENWATCH_STORE_PROMPTS` | `false` | Store prompt and response bodies for replay |
+| `TOKENWATCH_REDACT_STORED_PROMPTS` | `true` | Redact obvious secrets and emails before stored payloads are written |
 | `TOKENWATCH_PROMPT_RETENTION_DAYS` | `30` | Days to retain stored prompts |
 | `TOKENWATCH_BUDGET_ENABLED` | `true` | Enable budget enforcement |
 | `TOKENWATCH_OTEL_ENABLED` | `false` | Enable OpenTelemetry export |
@@ -87,6 +120,7 @@ All settings via environment variables or `.env` file:
 | Command | Description |
 |---|---|
 | `tokenwatch start` | Start proxy + dashboard servers |
+| `tokenwatch explain-request` | Show how TokenWatch would route, tag, budget-check, and forward a request without sending it |
 | `tokenwatch stats` | Show token usage statistics |
 | `tokenwatch tail` | Show recent requests |
 | `tokenwatch status` | Check if proxy is running |
@@ -114,24 +148,27 @@ All settings via environment variables or `.env` file:
 
 ## Dashboard
 
-The web dashboard at `http://localhost:8878` has 4 tabs:
+The web dashboard at `http://127.0.0.1:8878` has 4 tabs:
 
-1. **Overview**: real-time token usage charts, cost totals, and request volume. Line chart for usage over time, doughnut chart for model distribution.
-2. **Budgets**: live budget meters showing spend vs. limit for each configured budget. Color-coded warnings when approaching thresholds.
-3. **Cache**: hit/miss ratio, cache size, and recent cache events. Shows which prompts matched and how much money the cache saved.
-4. **Requests**: searchable table of all requests with model, tokens, cost, latency, tags, and cache status. WebSocket-powered live updates (no polling).
+1. **Overview**: real-time token usage charts, request table, and live request feed.
+2. **Cost Intelligence**: cost by tag, app, and session, plus a forecast panel.
+3. **Experiments**: A/B test status and replay placeholder UI.
+4. **System**: routing stats, cache stats, budgets, and upstream health.
+
+The dashboard uses WebSocket live events plus a periodic refresh loop for summary panels.
 
 ## Architecture
 
 Every request passes through the same pipeline:
 
-1. **Budget gate**: checks all matching budgets. If any budget is over-limit with a `kill` action, the request gets a 429 before it ever leaves the proxy.
-2. **Cache lookup**: the prompt is embedded and searched against Oracle AI Vector Search. If a cached response falls within the similarity threshold, it's returned immediately (no upstream call, no tokens burned).
-3. **Smart router**: routing rules are evaluated in priority order. Rules can match on source app, tag, content patterns, or time windows, and redirect to a different model or upstream.
-4. **A/B splitter**: if an active A/B test matches, the request is randomly assigned to model A or model B based on the configured split ratio.
-5. **Upstream forward**: the request goes to the selected provider. If the primary fails, the failover manager tries the next healthy upstream.
-6. **Log and store**: the response is parsed for token counts, cost is estimated, and everything is written to Oracle DB. If `STORE_PROMPTS` is on, the full prompt and response are stored for later replay.
-7. **Broadcast**: a summary is pushed to all connected WebSocket clients for the live dashboard.
+1. **Budget gate**: checks matching budgets. If a blocking budget is over limit, the request gets a `429` before it leaves the proxy.
+2. **Cache lookup**: if semantic caching is enabled and the request is cache-eligible, TokenWatch checks exact then semantic matches.
+3. **Tag resolution**: explicit `X-TokenWatch-Tag` wins. Otherwise TokenWatch can auto-tag from configured `tag_app` and `tag_regex` rules.
+4. **Smart router**: routing rules are evaluated in priority order and can switch the model or upstream.
+5. **A/B splitter**: if no routing rule already changed the model, an active A/B test can choose the final model.
+6. **Upstream forward**: the request goes to the selected provider. If one upstream connect attempt fails or times out, TokenWatch tries the next candidate.
+7. **Log and store**: the response is parsed for token counts, cost is estimated, and everything is written to Oracle DB. If prompt storage is enabled, stored payloads are redacted by default before replay data is written.
+8. **Broadcast**: a summary is pushed to all connected WebSocket clients for the live dashboard.
 
 ## Supported Models
 

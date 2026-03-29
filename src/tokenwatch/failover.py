@@ -11,21 +11,26 @@ from .db import Database
 logger = logging.getLogger("tokenwatch")
 
 
-async def get_upstream_url(db: Database, api_type: str, override_url: str = "") -> str:
-    """Get the best upstream URL for this request, considering health status."""
+async def get_upstream_candidates(db: Database, api_type: str, override_url: str = "") -> list[str]:
+    """Return upstream URLs ordered from best to worst candidate."""
     if override_url:
-        return override_url
+        return [override_url]
 
     upstreams = await db.get_upstreams(api_type)
     if not upstreams:
-        return ANTHROPIC_UPSTREAM if api_type == "anthropic" else OPENAI_UPSTREAM
+        return [ANTHROPIC_UPSTREAM if api_type == "anthropic" else OPENAI_UPSTREAM]
 
-    for u in upstreams:
-        if u.is_healthy:
-            return u.base_url
+    healthy = [u.base_url for u in upstreams if u.is_healthy]
+    unhealthy = [u.base_url for u in upstreams if not u.is_healthy]
+    if not healthy:
+        logger.warning("All %s upstreams unhealthy, trying all in priority order", api_type)
 
-    logger.warning("All %s upstreams unhealthy, using highest priority", api_type)
-    return upstreams[0].base_url
+    return healthy + unhealthy
+
+
+async def get_upstream_url(db: Database, api_type: str, override_url: str = "") -> str:
+    """Get the best upstream URL for this request, considering health status."""
+    return (await get_upstream_candidates(db, api_type, override_url))[0]
 
 
 async def report_upstream_failure(db: Database, api_type: str, base_url: str):

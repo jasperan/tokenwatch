@@ -11,19 +11,17 @@ from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import Response, StreamingResponse
 
 from .budget import check_budget_gate
-from .cache import cache_lookup, cache_store_response, extract_model, normalize_prompt, hash_prompt
+from .cache import cache_lookup, cache_store_response, normalize_prompt, hash_prompt
 from .config import (
-    ANTHROPIC_UPSTREAM,
     BUDGET_ENABLED,
     CACHE_ENABLED,
     CONNECT_TIMEOUT,
-    OPENAI_UPSTREAM,
     OVERALL_TIMEOUT,
     STORE_PROMPTS,
     estimate_cost,
 )
 from .db import Database
-from .failover import get_upstream_url, health_check_loop, report_upstream_failure, report_upstream_success
+from .failover import get_upstream_candidates, health_check_loop, report_upstream_failure, report_upstream_success
 from .interceptor import (
     new_streaming_record,
     parse_anthropic_response,
@@ -31,7 +29,9 @@ from .interceptor import (
     parse_openai_response,
     parse_openai_sse_event,
 )
+from .privacy import sanitize_stored_payload
 from .router import evaluate_ab_test, evaluate_routing
+from .tagging import auto_tag
 from .ws import ConnectionManager
 
 logger = logging.getLogger("tokenwatch")
@@ -100,18 +100,39 @@ def _feature_tag(request: Request) -> str:
     return request.headers.get("x-tokenwatch-tag", "")
 
 
-def _is_streaming(body: bytes) -> bool:
+async def _resolve_feature_tag(db: Database, explicit_tag: str, source_app: str, first_message: str) -> str:
+    """Resolve the request tag from the header first, then auto-tag rules."""
+    if explicit_tag:
+        return explicit_tag
     try:
-        return json.loads(body).get("stream", False) if body else False
+        rules = await db.get_tag_rules()
+    except Exception:
+        logger.exception("Failed to load tag rules")
+        return explicit_tag
+    return auto_tag(source_app, first_message, rules)
+
+
+def _parse_json_body(body_or_data: bytes | dict | None) -> dict | None:
+    """Return parsed request JSON or None for invalid payloads."""
+    if isinstance(body_or_data, dict):
+        return body_or_data
+    if not body_or_data:
+        return None
+    try:
+        return json.loads(body_or_data)
     except (json.JSONDecodeError, ValueError):
-        return False
+        return None
 
 
-def _extract_request_info(body: bytes) -> dict:
+def _is_streaming(body_or_data: bytes | dict) -> bool:
+    data = _parse_json_body(body_or_data)
+    return bool(data and data.get("stream", False))
+
+
+def _extract_request_info(body_or_data: bytes | dict) -> dict:
     """Extract model, first message content, and estimated token count from request body."""
-    try:
-        data = json.loads(body)
-    except (json.JSONDecodeError, ValueError):
+    data = _parse_json_body(body_or_data)
+    if data is None:
         return {"model": "", "first_message": "", "est_tokens": 0}
 
     model = data.get("model", "")
@@ -127,18 +148,43 @@ def _extract_request_info(body: bytes) -> dict:
                     first_message = block.get("text", "")
                     break
 
-    est_tokens = len(json.dumps(data)) // 4
+    if isinstance(body_or_data, (bytes, bytearray)):
+        est_tokens = len(body_or_data) // 4
+    else:
+        est_tokens = len(json.dumps(data, separators=(",", ":"))) // 4
     return {"model": model, "first_message": first_message, "est_tokens": est_tokens}
 
 
-def _rewrite_model_in_body(body: bytes, new_model: str) -> bytes:
+def _rewrite_model_in_body(body: bytes, new_model: str, body_data: dict | None = None) -> bytes:
     """Rewrite the model field in the request body JSON."""
-    try:
-        data = json.loads(body)
-        data["model"] = new_model
-        return json.dumps(data).encode()
-    except (json.JSONDecodeError, ValueError):
+    data = _parse_json_body(body_data if body_data is not None else body)
+    if data is None:
         return body
+    data["model"] = new_model
+    return json.dumps(data, separators=(",", ":")).encode()
+
+
+def _build_upstream_url(base_url: str, path: str, query: str) -> str:
+    """Build the upstream URL for a proxied request."""
+    upstream_url = f"{base_url}/{path}"
+    if query:
+        upstream_url += f"?{query}"
+    return upstream_url
+
+
+def _upstream_error_response(error_type: str) -> Response:
+    """Create a consistent upstream failure response."""
+    if error_type == "timeout":
+        return Response(
+            content=json.dumps({"error": "TokenWatch: upstream timeout"}).encode(),
+            status_code=504,
+            media_type="application/json",
+        )
+    return Response(
+        content=json.dumps({"error": "TokenWatch: cannot connect to upstream"}).encode(),
+        status_code=502,
+        media_type="application/json",
+    )
 
 
 # --- WebSocket endpoint ---
@@ -185,8 +231,11 @@ async def _proxy_request(request: Request, path: str, body: bytes, api_type: str
     feature_tag = _feature_tag(request)
     headers = _forward_headers(request.headers)
     start = time.monotonic()
-    info = _extract_request_info(body)
+    parsed_body = _parse_json_body(body)
+    info = _extract_request_info(parsed_body if parsed_body is not None else body)
     requested_model = info["model"]
+    is_streaming = _is_streaming(parsed_body if parsed_body is not None else body)
+    feature_tag = await _resolve_feature_tag(db, feature_tag, source_app, info["first_message"])
 
     extra_headers = {}
 
@@ -202,8 +251,8 @@ async def _proxy_request(request: Request, path: str, body: bytes, api_type: str
         extra_headers.update(budget_result["headers"])
 
     # --- Stage 2: Cache lookup ---
-    if CACHE_ENABLED and not _is_streaming(body):
-        cache_result = await cache_lookup(db, body, api_type)
+    if CACHE_ENABLED and not is_streaming:
+        cache_result = await cache_lookup(db, parsed_body if parsed_body is not None else body, api_type)
         if cache_result:
             latency_ms = int((time.monotonic() - start) * 1000)
             # Log cache hit
@@ -251,7 +300,8 @@ async def _proxy_request(request: Request, path: str, body: bytes, api_type: str
     if routing_decision.was_rerouted:
         routed_model = routing_decision.model
         routing_rule_id = routing_decision.rule_id
-        body = _rewrite_model_in_body(body, routed_model)
+        body = _rewrite_model_in_body(body, routed_model, parsed_body)
+        parsed_body = _parse_json_body(body)
         extra_headers["X-TokenWatch-Requested-Model"] = requested_model
         extra_headers["X-TokenWatch-Routed-Model"] = routed_model
         extra_headers["X-TokenWatch-Routing-Rule"] = routing_decision.rule_name
@@ -264,60 +314,63 @@ async def _proxy_request(request: Request, path: str, body: bytes, api_type: str
         if ab_id is not None:
             routed_model = ab_model
             ab_test_id = ab_id
-            body = _rewrite_model_in_body(body, routed_model)
+            body = _rewrite_model_in_body(body, routed_model, parsed_body)
+            parsed_body = _parse_json_body(body)
             extra_headers["X-TokenWatch-AB-Test"] = str(ab_id)
 
     # --- Stage 4: Upstream selection ---
     override_upstream = routing_decision.upstream if routing_decision.was_rerouted else ""
-    base_url = await get_upstream_url(db, api_type, override_upstream)
-    upstream_url = f"{base_url}/{path}"
-    if request.url.query:
-        upstream_url += f"?{request.url.query}"
+    base_urls = await get_upstream_candidates(db, api_type, override_upstream)
 
     client = await get_client()
 
     # --- Stage 5: Forward request ---
-    if _is_streaming(body):
+    if is_streaming:
         return await _proxy_streaming(
-            client, request.method, upstream_url, headers, body,
+            client, request.method, base_urls, path, request.url.query, headers, body,
             api_type, source_app, session_id, feature_tag,
             requested_model, routed_model, routing_rule_id, ab_test_id,
-            start, extra_headers, base_url,
+            start, extra_headers,
         )
     return await _proxy_non_streaming(
-        client, request.method, upstream_url, headers, body,
+        client, request.method, base_urls, path, request.url.query, headers, body,
         api_type, source_app, session_id, feature_tag,
         requested_model, routed_model, routing_rule_id, ab_test_id,
-        start, extra_headers, base_url,
+        start, extra_headers,
     )
 
 
 async def _proxy_non_streaming(
-    client, method, url, headers, body,
+    client, method, base_urls, path, query, headers, body,
     api_type, source_app, session_id, feature_tag,
     requested_model, routed_model, routing_rule_id, ab_test_id,
-    start, extra_headers, base_url,
+    start, extra_headers,
 ):
     parse_fn = parse_anthropic_response if api_type == "anthropic" else parse_openai_response
 
-    try:
-        resp = await client.request(method, url, headers=headers, content=body)
-    except httpx.ConnectError:
-        logger.error("Cannot connect to upstream: %s", url)
-        await report_upstream_failure(db, api_type, base_url)
-        return Response(
-            content=json.dumps({"error": "TokenWatch: cannot connect to upstream"}).encode(),
-            status_code=502, media_type="application/json",
-        )
-    except httpx.TimeoutException:
-        logger.error("Upstream timeout: %s", url)
-        await report_upstream_failure(db, api_type, base_url)
-        return Response(
-            content=json.dumps({"error": "TokenWatch: upstream timeout"}).encode(),
-            status_code=504, media_type="application/json",
-        )
+    resp = None
+    selected_base_url = None
+    last_error_type = "connect"
 
-    await report_upstream_success(db, api_type, base_url)
+    for base_url in base_urls:
+        url = _build_upstream_url(base_url, path, query)
+        try:
+            resp = await client.request(method, url, headers=headers, content=body)
+            selected_base_url = base_url
+            break
+        except httpx.ConnectError:
+            last_error_type = "connect"
+            logger.error("Cannot connect to upstream: %s", url)
+            await report_upstream_failure(db, api_type, base_url)
+        except httpx.TimeoutException:
+            last_error_type = "timeout"
+            logger.error("Upstream timeout: %s", url)
+            await report_upstream_failure(db, api_type, base_url)
+
+    if resp is None or selected_base_url is None:
+        return _upstream_error_response(last_error_type)
+
+    await report_upstream_success(db, api_type, selected_base_url)
     latency_ms = int((time.monotonic() - start) * 1000)
     resp_body = resp.content
 
@@ -346,7 +399,9 @@ async def _proxy_non_streaming(
     if STORE_PROMPTS and resp.status_code == 200:
         try:
             p_hash = hash_prompt(normalize_prompt(body, api_type))
-            await db.store_prompt(record.request_id, body.decode("utf-8", errors="replace"), resp_body.decode("utf-8", errors="replace"), p_hash)
+            request_body = sanitize_stored_payload(body.decode("utf-8", errors="replace"))
+            response_body = sanitize_stored_payload(resp_body.decode("utf-8", errors="replace"))
+            await db.store_prompt(record.request_id, request_body, response_body, p_hash)
         except Exception:
             logger.exception("Failed to store prompt")
 
@@ -378,32 +433,37 @@ async def _proxy_non_streaming(
 
 
 async def _proxy_streaming(
-    client, method, url, headers, body,
+    client, method, base_urls, path, query, headers, body,
     api_type, source_app, session_id, feature_tag,
     requested_model, routed_model, routing_rule_id, ab_test_id,
-    start, extra_headers, base_url,
+    start, extra_headers,
 ):
     parse_event_fn = parse_anthropic_sse_event if api_type == "anthropic" else parse_openai_sse_event
 
-    try:
-        req = client.build_request(method, url, headers=headers, content=body)
-        resp = await client.send(req, stream=True)
-    except httpx.ConnectError:
-        logger.error("Cannot connect to upstream: %s", url)
-        await report_upstream_failure(db, api_type, base_url)
-        return Response(
-            content=json.dumps({"error": "TokenWatch: cannot connect to upstream"}).encode(),
-            status_code=502, media_type="application/json",
-        )
-    except httpx.TimeoutException:
-        logger.error("Upstream timeout: %s", url)
-        await report_upstream_failure(db, api_type, base_url)
-        return Response(
-            content=json.dumps({"error": "TokenWatch: upstream timeout"}).encode(),
-            status_code=504, media_type="application/json",
-        )
+    resp = None
+    selected_base_url = None
+    last_error_type = "connect"
 
-    await report_upstream_success(db, api_type, base_url)
+    for base_url in base_urls:
+        url = _build_upstream_url(base_url, path, query)
+        try:
+            req = client.build_request(method, url, headers=headers, content=body)
+            resp = await client.send(req, stream=True)
+            selected_base_url = base_url
+            break
+        except httpx.ConnectError:
+            last_error_type = "connect"
+            logger.error("Cannot connect to upstream: %s", url)
+            await report_upstream_failure(db, api_type, base_url)
+        except httpx.TimeoutException:
+            last_error_type = "timeout"
+            logger.error("Upstream timeout: %s", url)
+            await report_upstream_failure(db, api_type, base_url)
+
+    if resp is None or selected_base_url is None:
+        return _upstream_error_response(last_error_type)
+
+    await report_upstream_success(db, api_type, selected_base_url)
 
     record = new_streaming_record(api_type, source_app)
     record.status_code = resp.status_code

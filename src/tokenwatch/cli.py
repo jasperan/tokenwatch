@@ -1,8 +1,9 @@
 """CLI interface for TokenWatch."""
 
 import asyncio
-import logging
 import json
+import logging
+from pathlib import Path
 
 import click
 import uvicorn
@@ -11,7 +12,7 @@ from rich.table import Table
 from rich.live import Live
 
 from . import __version__
-from .config import DASHBOARD_PORT, ORACLE_DSN, ORACLE_USER, PROXY_PORT
+from .config import DASHBOARD_PORT, HOST, ORACLE_DSN, ORACLE_USER, PROXY_PORT
 from .db import Database
 from .models import BudgetRecord, RoutingRule, ABTest, Upstream
 
@@ -33,23 +34,24 @@ def cli():
 # --- Start ---
 
 @cli.command()
+@click.option("--host", default=HOST, help="Bind host")
 @click.option("--proxy-port", default=PROXY_PORT, help="Proxy port")
 @click.option("--dashboard-port", default=DASHBOARD_PORT, help="Dashboard port")
 @click.option("--log-level", default="info", type=click.Choice(["debug", "info", "warning", "error"]))
-def start(proxy_port, dashboard_port, log_level):
+def start(host, proxy_port, dashboard_port, log_level):
     """Start the TokenWatch proxy and dashboard servers."""
     logging.basicConfig(
         level=getattr(logging, log_level.upper()),
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     )
     console.print(f"[bold green]TokenWatch v{__version__}[/]")
-    console.print(f"  Proxy:     http://localhost:{proxy_port}")
-    console.print(f"  Dashboard: http://localhost:{dashboard_port}")
+    console.print(f"  Proxy:     http://{host}:{proxy_port}")
+    console.print(f"  Dashboard: http://{host}:{dashboard_port}")
     console.print(f"  Oracle DB: {ORACLE_DSN} (user: {ORACLE_USER})")
     console.print()
     console.print("[dim]Configure your apps to use:[/]")
-    console.print(f"[dim]  Anthropic: http://localhost:{proxy_port}/anthropic[/dim]")
-    console.print(f"[dim]  OpenAI:    http://localhost:{proxy_port}/openai[/dim]")
+    console.print(f"[dim]  Anthropic: http://{host}:{proxy_port}/anthropic[/dim]")
+    console.print(f"[dim]  OpenAI:    http://{host}:{proxy_port}/openai[/dim]")
     console.print()
 
     import threading
@@ -57,17 +59,48 @@ def start(proxy_port, dashboard_port, log_level):
     def run_dashboard():
         from .dashboard_app import create_dashboard_app
         dash_app = create_dashboard_app()
-        uvicorn.run(dash_app, host="0.0.0.0", port=dashboard_port, log_level=log_level)
+        uvicorn.run(dash_app, host=host, port=dashboard_port, log_level=log_level)
 
     dash_thread = threading.Thread(target=run_dashboard, daemon=True)
     dash_thread.start()
 
     uvicorn.run(
         "tokenwatch.proxy:app",
-        host="0.0.0.0",
+        host=host,
         port=proxy_port,
         log_level=log_level,
     )
+
+
+# --- Explain ---
+
+@cli.command("explain-request")
+@click.option("--api-type", required=True, type=click.Choice(["anthropic", "openai"]))
+@click.option("--body-file", required=True, type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--source-app", default="tokenwatch-explain", help="Source app / user-agent to simulate")
+@click.option("--feature-tag", default="", help="Explicit feature tag override")
+def explain_request(api_type, body_file, source_app, feature_tag):
+    """Explain how TokenWatch would handle a request without forwarding it."""
+    _run(_explain_request(api_type, body_file, source_app, feature_tag))
+
+
+async def _explain_request(api_type, body_file, source_app, feature_tag):
+    from .explain import build_request_explanation
+
+    db = Database()
+    await db.init()
+    try:
+        explanation = await build_request_explanation(
+            db,
+            api_type=api_type,
+            body=body_file.read_bytes(),
+            source_app=source_app,
+            feature_tag=feature_tag,
+        )
+    finally:
+        await db.close()
+
+    console.print(json.dumps(explanation, indent=2))
 
 
 # --- Stats ---

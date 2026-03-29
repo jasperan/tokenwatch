@@ -1,6 +1,5 @@
 """Async Oracle database layer for TokenWatch."""
 
-import json
 import logging
 from pathlib import Path
 
@@ -54,13 +53,18 @@ class Database:
     """Oracle async database interface for TokenWatch."""
 
     def __init__(self, dsn=None, user=None, password=None):
-        self._dsn = dsn or ORACLE_DSN
-        self._user = user or ORACLE_USER
-        self._password = password or ORACLE_PASSWORD
+        self._dsn = ORACLE_DSN if dsn is None else dsn
+        self._user = ORACLE_USER if user is None else user
+        self._password = ORACLE_PASSWORD if password is None else password
         self._pool: oracledb.AsyncConnectionPool | None = None
 
     async def init(self):
         """Create async connection pool and ensure schema exists."""
+        if not self._user or not self._password:
+            raise RuntimeError(
+                "TOKENWATCH_ORACLE_USER and TOKENWATCH_ORACLE_PASSWORD must be set before starting TokenWatch"
+            )
+
         self._pool = oracledb.create_pool_async(
             dsn=self._dsn,
             user=self._user,
@@ -275,28 +279,61 @@ class Database:
                 await cur.execute("DELETE FROM budgets WHERE id = :1", [budget_id])
             await conn.commit()
 
+    def _budget_matches_request(
+        self,
+        budget: BudgetRecord,
+        source_app: str,
+        model: str,
+        feature_tag: str,
+    ) -> bool:
+        """Return True when a budget applies to the current request."""
+        if budget.scope == "global":
+            return True
+        if budget.scope == "app":
+            return bool(budget.scope_value) and source_app == budget.scope_value
+        if budget.scope == "model":
+            return bool(budget.scope_value) and model == budget.scope_value
+        if budget.scope == "tag":
+            return bool(budget.scope_value) and feature_tag == budget.scope_value
+        return False
+
+    def _budget_result_entry(self, budget: BudgetRecord, spend: float, action: str | None = None) -> dict:
+        """Normalize a budget result for proxy and dashboard consumers."""
+        return {
+            "budget_id": budget.id,
+            "scope": budget.scope,
+            "scope_value": budget.scope_value,
+            "limit": float(budget.limit_amount),
+            "spent": float(spend),
+            "period": budget.period,
+            "action": action or budget.action_on_limit,
+            "webhook_url": budget.webhook_url,
+        }
+
     async def check_budget(self, source_app: str, model: str, feature_tag: str) -> dict:
-        """Check all active budgets and return allow/block decision."""
+        """Check matching active budgets and return allow/block decision."""
         budgets = await self.get_budgets()
         warnings = []
         blocking_budget = None
 
         for b in budgets:
-            if not b.is_active:
+            if not b.is_active or not self._budget_matches_request(b, source_app, model, feature_tag):
                 continue
+
             spend = await self._get_period_spend(b)
             if spend >= b.limit_amount:
+                result = self._budget_result_entry(b, spend)
                 if b.action_on_limit == "block":
-                    blocking_budget = b
+                    blocking_budget = result
                     break
-                warnings.append({"budget_id": b.id, "spend": spend, "limit": b.limit_amount})
+                warnings.append(result)
             elif spend >= b.limit_amount * 0.8:
-                warnings.append({"budget_id": b.id, "spend": spend, "limit": b.limit_amount})
+                warnings.append(self._budget_result_entry(b, spend, action="approaching"))
 
         return {
             "allowed": blocking_budget is None,
             "warnings": warnings,
-            "blocking_budget": blocking_budget.model_dump() if blocking_budget else None,
+            "blocking_budget": blocking_budget,
         }
 
     async def _get_period_spend(self, budget: BudgetRecord) -> float:
@@ -363,6 +400,26 @@ class Database:
                         is_active=bool(r[7]),
                     )
                     for r in rows
+                ]
+
+    async def get_tag_rules(self) -> list[dict]:
+        """Return active auto-tagging rules ordered by priority."""
+        sql = """SELECT priority, condition_type, condition_value, target_model
+                 FROM routing_rules
+                 WHERE is_active = 1 AND condition_type LIKE 'tag_%'
+                 ORDER BY priority"""
+        async with self._pool.acquire() as conn:
+            with conn.cursor() as cur:
+                await cur.execute(sql)
+                rows = await cur.fetchall()
+                return [
+                    {
+                        "priority": row[0],
+                        "condition_type": row[1],
+                        "condition_value": row[2] or "",
+                        "tag": row[3] or "",
+                    }
+                    for row in rows
                 ]
 
     async def add_routing_rule(self, rule: RoutingRule) -> int:
