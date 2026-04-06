@@ -61,7 +61,7 @@ def test_start_binds_proxy_and_dashboard_to_localhost_by_default(monkeypatch):
         def start(self):
             self.target()
 
-    def fake_run(app, host, port, log_level):
+    def fake_run(app, host, port, log_level, **kwargs):
         runs.append({"app": app, "host": host, "port": port, "log_level": log_level})
         return None
 
