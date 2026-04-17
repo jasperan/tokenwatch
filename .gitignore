@@ -27,3 +27,17 @@ htmlcov/
 # Claude Code
 .claude/
 CLAUDE.md
+
+# Auto-added by install-pre-commit-hooks.sh
+dogfood-output/
+task_plan.md
+findings.md
+progress.md
+.playwright-mcp/
+
+# Agent/skill directories (local only)
+.agents/
+.crush/
+.openhands/
+.serena/
+content/
