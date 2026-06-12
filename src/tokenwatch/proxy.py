@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import time
+import uuid
 from contextlib import asynccontextmanager
 
 import httpx
@@ -29,9 +30,11 @@ from .interceptor import (
     parse_openai_response,
     parse_openai_sse_event,
 )
+from .models import UsageRecord
 from .privacy import sanitize_stored_payload
 from .router import evaluate_ab_test, evaluate_routing
 from .tagging import auto_tag
+from .telemetry import init_telemetry, record_request_metrics
 from .ws import ConnectionManager
 
 logger = logging.getLogger("tokenwatch")
@@ -57,11 +60,7 @@ async def get_client() -> httpx.AsyncClient:
 async def lifespan(app):
     await db.init()
     # Init OTEL if enabled
-    try:
-        from .telemetry import init_telemetry
-        init_telemetry()
-    except ImportError:
-        pass
+    init_telemetry()
     # Start health check background task
     health_task = asyncio.create_task(health_check_loop(db))
     logger.info("TokenWatch proxy started")
@@ -256,7 +255,6 @@ async def _proxy_request(request: Request, path: str, body: bytes, api_type: str
         if cache_result:
             latency_ms = int((time.monotonic() - start) * 1000)
             # Log cache hit
-            from .models import UsageRecord
             record = UsageRecord(
                 api_type=api_type,
                 model=requested_model,
@@ -308,7 +306,6 @@ async def _proxy_request(request: Request, path: str, body: bytes, api_type: str
 
     # A/B test (only if routing didn't already reroute)
     if not routing_decision.was_rerouted:
-        import uuid
         req_id = str(uuid.uuid4())
         ab_model, ab_id = await evaluate_ab_test(db, req_id, routed_model, source_app)
         if ab_id is not None:
@@ -409,11 +406,7 @@ async def _proxy_non_streaming(
     await _broadcast_record(record)
 
     # OTEL metrics
-    try:
-        from .telemetry import record_request_metrics
-        record_request_metrics(record)
-    except ImportError:
-        pass
+    record_request_metrics(record)
 
     logger.info(
         "REQ %s model=%s in=%d out=%d cost=$%.4f latency=%dms",
@@ -504,11 +497,7 @@ async def _proxy_streaming(
             except Exception:
                 logger.exception("Failed to log streaming request")
             await _broadcast_record(record)
-            try:
-                from .telemetry import record_request_metrics
-                record_request_metrics(record)
-            except ImportError:
-                pass
+            record_request_metrics(record)
             logger.info(
                 "STREAM %s model=%s in=%d out=%d cost=$%.4f latency=%dms",
                 api_type, record.model, record.input_tokens, record.output_tokens,

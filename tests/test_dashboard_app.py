@@ -45,7 +45,12 @@ class FakeDashboardDatabase:
         return []
 
     async def cost_forecast(self):
-        return {"daily_avg": 0.5, "monthly_projection": 15.0, "data_points": 7}
+        return {
+            "last_7_days_total": 3.5,
+            "daily_avg": 0.5,
+            "monthly_projection": 15.0,
+            "active_days": 7,
+        }
 
     async def routing_stats(self):
         return [{"rule_name": "small-prompts", "total_requests": 1}]

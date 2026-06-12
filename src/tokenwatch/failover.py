@@ -28,11 +28,6 @@ async def get_upstream_candidates(db: Database, api_type: str, override_url: str
     return healthy + unhealthy
 
 
-async def get_upstream_url(db: Database, api_type: str, override_url: str = "") -> str:
-    """Get the best upstream URL for this request, considering health status."""
-    return (await get_upstream_candidates(db, api_type, override_url))[0]
-
-
 async def report_upstream_failure(db: Database, api_type: str, base_url: str):
     """Mark an upstream as unhealthy after a failure."""
     upstreams = await db.get_upstreams(api_type)

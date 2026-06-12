@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import click
@@ -22,6 +23,17 @@ console = Console()
 def _run(coro):
     """Run an async function."""
     return asyncio.run(coro)
+
+
+@asynccontextmanager
+async def open_db():
+    """Open an initialized Database and guarantee the pool is closed."""
+    db = Database()
+    await db.init()
+    try:
+        yield db
+    finally:
+        await db.close()
 
 
 @click.group()
@@ -87,9 +99,7 @@ def explain_request(api_type, body_file, source_app, feature_tag):
 async def _explain_request(api_type, body_file, source_app, feature_tag):
     from .explain import build_request_explanation
 
-    db = Database()
-    await db.init()
-    try:
+    async with open_db() as db:
         explanation = await build_request_explanation(
             db,
             api_type=api_type,
@@ -97,8 +107,6 @@ async def _explain_request(api_type, body_file, source_app, feature_tag):
             source_app=source_app,
             feature_tag=feature_tag,
         )
-    finally:
-        await db.close()
 
     console.print(json.dumps(explanation, indent=2))
 
@@ -113,12 +121,8 @@ def stats(timeframe):
 
 
 async def _show_stats(timeframe):
-    db = Database()
-    await db.init()
-    try:
+    async with open_db() as db:
         s = await db.get_stats(timeframe)
-    finally:
-        await db.close()
 
     console.print(f"\n[bold]TokenWatch Stats[/] ({timeframe})\n")
 
@@ -163,9 +167,6 @@ def tail(limit):
 
 
 async def _tail(limit):
-    db = Database()
-    await db.init()
-
     def build_table(rows):
         t = Table(show_header=True, header_style="bold cyan")
         t.add_column("Time", style="dim")
@@ -193,16 +194,15 @@ async def _tail(limit):
             )
         return t
 
-    try:
-        with Live(console=console, refresh_per_second=1) as live:
-            while True:
-                rows = await db.get_recent(limit)
-                live.update(build_table(rows))
-                await asyncio.sleep(2)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        await db.close()
+    async with open_db() as db:
+        try:
+            with Live(console=console, refresh_per_second=1) as live:
+                while True:
+                    rows = await db.get_recent(limit)
+                    live.update(build_table(rows))
+                    await asyncio.sleep(2)
+        except KeyboardInterrupt:
+            pass
 
 
 # --- Status ---
@@ -231,10 +231,8 @@ def reset():
 
 
 async def _reset():
-    db = Database()
-    await db.init()
-    await db.reset()
-    await db.close()
+    async with open_db() as db:
+        await db.reset()
     console.print("[green]Database cleared.[/]")
 
 
@@ -272,10 +270,8 @@ def budget_set(limit, period, app, model, tag, action, webhook_url):
 
 
 async def _budget_set(budget):
-    db = Database()
-    await db.init()
-    budget_id = await db.add_budget(budget)
-    await db.close()
+    async with open_db() as db:
+        budget_id = await db.add_budget(budget)
     console.print(f"[green]Budget #{budget_id} created: ${budget.limit_amount:.2f}/{budget.period} ({budget.scope})[/]")
 
 
@@ -286,10 +282,8 @@ def budget_status():
 
 
 async def _budget_status():
-    db = Database()
-    await db.init()
-    statuses = await db.get_budget_status()
-    await db.close()
+    async with open_db() as db:
+        statuses = await db.get_budget_status()
 
     if not statuses:
         console.print("[dim]No budgets configured.[/]")
@@ -327,10 +321,8 @@ def budget_remove(budget_id):
 
 
 async def _budget_remove(budget_id):
-    db = Database()
-    await db.init()
-    await db.remove_budget(budget_id)
-    await db.close()
+    async with open_db() as db:
+        await db.remove_budget(budget_id)
     console.print(f"[green]Budget #{budget_id} removed.[/]")
 
 
@@ -350,10 +342,8 @@ def cost_by_tag(timeframe):
 
 
 async def _cost_by_tag(timeframe):
-    db = Database()
-    await db.init()
-    data = await db.cost_by_tag(timeframe)
-    await db.close()
+    async with open_db() as db:
+        data = await db.cost_by_tag(timeframe)
 
     table = Table(show_header=True, header_style="bold cyan", title=f"Cost by Tag ({timeframe})")
     table.add_column("Tag")
@@ -379,10 +369,8 @@ def cost_by_app(timeframe):
 
 
 async def _cost_by_app(timeframe):
-    db = Database()
-    await db.init()
-    data = await db.cost_by_app(timeframe)
-    await db.close()
+    async with open_db() as db:
+        data = await db.cost_by_app(timeframe)
 
     table = Table(show_header=True, header_style="bold cyan", title=f"Cost by App ({timeframe})")
     table.add_column("App")
@@ -403,10 +391,8 @@ def cost_by_session(top):
 
 
 async def _cost_by_session(top):
-    db = Database()
-    await db.init()
-    data = await db.cost_by_session(top)
-    await db.close()
+    async with open_db() as db:
+        data = await db.cost_by_session(top)
 
     table = Table(show_header=True, header_style="bold cyan", title=f"Top {top} Sessions by Cost")
     table.add_column("Session ID")
@@ -433,12 +419,10 @@ def cost_forecast():
 
 
 async def _cost_forecast():
-    db = Database()
-    await db.init()
-    data = await db.cost_forecast()
-    await db.close()
+    async with open_db() as db:
+        data = await db.cost_forecast()
 
-    console.print(f"\n[bold]Cost Forecast[/] (based on {data['data_points']} days)\n")
+    console.print(f"\n[bold]Cost Forecast[/] (based on {data['active_days']} active days)\n")
     console.print(f"  Daily average:      [yellow]${data['daily_avg']:.4f}[/]")
     console.print(f"  Monthly projection: [yellow]${data['monthly_projection']:.2f}[/]")
     console.print()
@@ -468,10 +452,8 @@ def route_add(name, condition, value, target, priority, upstream):
 
 
 async def _route_add(rule):
-    db = Database()
-    await db.init()
-    rule_id = await db.add_routing_rule(rule)
-    await db.close()
+    async with open_db() as db:
+        rule_id = await db.add_routing_rule(rule)
     console.print(f"[green]Rule #{rule_id} created: {rule.rule_name} ({rule.condition_type}={rule.condition_value} -> {rule.target_model})[/]")
 
 
@@ -482,10 +464,8 @@ def route_list():
 
 
 async def _route_list():
-    db = Database()
-    await db.init()
-    rules = await db.get_routing_rules()
-    await db.close()
+    async with open_db() as db:
+        rules = await db.get_routing_rules()
 
     if not rules:
         console.print("[dim]No routing rules configured.[/]")
@@ -518,10 +498,8 @@ def route_enable(rule_id):
 
 
 async def _route_toggle(rule_id, active):
-    db = Database()
-    await db.init()
-    await db.set_routing_rule_active(rule_id, active)
-    await db.close()
+    async with open_db() as db:
+        await db.set_routing_rule_active(rule_id, active)
     state = "enabled" if active else "disabled"
     console.print(f"[green]Rule #{rule_id} {state}.[/]")
 
@@ -541,10 +519,8 @@ def cache_stats():
 
 
 async def _cache_stats():
-    db = Database()
-    await db.init()
-    data = await db.cache_stats()
-    await db.close()
+    async with open_db() as db:
+        data = await db.cache_stats()
 
     console.print("\n[bold]Cache Stats[/]\n")
     console.print(f"  Total entries:  {data['entries']}")
@@ -562,10 +538,8 @@ def cache_clear(model):
 
 
 async def _cache_clear(model):
-    db = Database()
-    await db.init()
-    await db.cache_clear(model)
-    await db.close()
+    async with open_db() as db:
+        await db.cache_clear(model)
     scope = f" for model={model}" if model else ""
     console.print(f"[green]Cache cleared{scope}.[/]")
 
@@ -589,10 +563,8 @@ def ab_create(name, model_a, model_b, split):
 
 
 async def _ab_create(test):
-    db = Database()
-    await db.init()
-    test_id = await db.create_ab_test(test)
-    await db.close()
+    async with open_db() as db:
+        test_id = await db.create_ab_test(test)
     console.print(f"[green]A/B test #{test_id} created: {test.test_name} ({test.model_a} vs {test.model_b}, {test.split_pct}% split)[/]")
 
 
@@ -603,10 +575,8 @@ def ab_list():
 
 
 async def _ab_list():
-    db = Database()
-    await db.init()
-    tests = await db.get_active_ab_tests()
-    await db.close()
+    async with open_db() as db:
+        tests = await db.get_active_ab_tests()
 
     if not tests:
         console.print("[dim]No active A/B tests.[/]")
@@ -633,10 +603,8 @@ def ab_report(name):
 
 
 async def _ab_report(name):
-    db = Database()
-    await db.init()
-    data = await db.get_ab_report(name)
-    await db.close()
+    async with open_db() as db:
+        data = await db.get_ab_report(name)
 
     if not data:
         console.print(f"[red]Test '{name}' not found.[/]")
@@ -648,9 +616,6 @@ async def _ab_report(name):
     table.add_column("Metric")
     table.add_column(data["model_a"], justify="right")
     table.add_column(data["model_b"], justify="right")
-
-    for variant_name, variant_data in data.get("variants", {}).items():
-        pass  # Display per-variant metrics
 
     variants = data.get("variants", {})
     metrics = ["requests", "avg_latency", "avg_output_tokens", "total_cost", "avg_cost", "error_rate"]
@@ -687,10 +652,8 @@ def ab_complete(name):
 
 
 async def _ab_status_change(name, status):
-    db = Database()
-    await db.init()
-    await db.update_ab_test_status(name, status)
-    await db.close()
+    async with open_db() as db:
+        await db.update_ab_test_status(name, status)
     console.print(f"[green]A/B test '{name}' {status}.[/]")
 
 
@@ -710,10 +673,8 @@ def replay(from_date, to_date, source_model, target_model, concurrency, dry_run)
 
 async def _replay(from_date, to_date, source_model, target_model, concurrency, dry_run):
     from .replay import run_replay
-    db = Database()
-    await db.init()
-    result = await run_replay(db, source_model, target_model, from_date, to_date, concurrency, dry_run)
-    await db.close()
+    async with open_db() as db:
+        result = await run_replay(db, source_model, target_model, from_date, to_date, concurrency, dry_run)
 
     if result.get("error"):
         console.print(f"[red]{result['error']}[/]")
@@ -753,10 +714,8 @@ def upstream_add(api_type, url, priority):
 
 
 async def _upstream_add(u):
-    db = Database()
-    await db.init()
-    uid = await db.add_upstream(u)
-    await db.close()
+    async with open_db() as db:
+        uid = await db.add_upstream(u)
     console.print(f"[green]Upstream #{uid} added: {u.api_type} {u.base_url} (priority={u.priority})[/]")
 
 
@@ -767,10 +726,8 @@ def upstream_list():
 
 
 async def _upstream_list():
-    db = Database()
-    await db.init()
-    upstreams = await db.get_upstreams()
-    await db.close()
+    async with open_db() as db:
+        upstreams = await db.get_upstreams()
 
     if not upstreams:
         console.print("[dim]No upstreams configured (using defaults from config).[/]")
@@ -798,8 +755,6 @@ def upstream_remove(upstream_id):
 
 
 async def _upstream_remove(upstream_id):
-    db = Database()
-    await db.init()
-    await db.remove_upstream(upstream_id)
-    await db.close()
+    async with open_db() as db:
+        await db.remove_upstream(upstream_id)
     console.print(f"[green]Upstream #{upstream_id} removed.[/]")

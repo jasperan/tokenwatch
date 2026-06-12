@@ -78,30 +78,6 @@ def extract_model(body_or_data: bytes | dict) -> str:
     return data.get("model", "")
 
 
-async def generate_embedding(db: Database, text: str) -> list[float] | None:
-    """Generate embedding using Oracle DBMS_VECTOR_CHAIN.
-
-    Uses the built-in ONNX model loaded into Oracle DB 26ai.
-    Returns None if embedding generation fails.
-    """
-    if not text:
-        return None
-    try:
-        async with db._pool.acquire() as conn:
-            cursor = await conn.execute(
-                """SELECT TO_VECTOR(DBMS_VECTOR_CHAIN.UTL_TO_EMBEDDING(:1,
-                          JSON('{"provider":"database","model":"all_minilm_l12_v2"}')))
-                   FROM dual""",
-                [text[:8000]],
-            )
-            row = await cursor.fetchone()
-            if row and row[0]:
-                return row[0]
-    except Exception:
-        logger.exception("Failed to generate embedding")
-    return None
-
-
 async def cache_lookup(db: Database, body_or_data: bytes | dict, api_type: str) -> dict | None:
     """Look up cached response for this prompt. Returns None on miss."""
     data = _load_request_json(body_or_data)
@@ -122,7 +98,7 @@ async def cache_lookup(db: Database, body_or_data: bytes | dict, api_type: str) 
         return result
 
     # Tier 2: semantic similarity
-    embedding = await generate_embedding(db, normalized)
+    embedding = await db.generate_embedding(normalized)
     if embedding:
         result = await db.cache_lookup_semantic(embedding, model, CACHE_SIMILARITY_THRESHOLD)
         if result:
@@ -145,7 +121,7 @@ async def cache_store_response(db: Database, body_or_data: bytes | dict, api_typ
     prompt_hash = hash_prompt(normalized)
     model = extract_model(data)
 
-    embedding = await generate_embedding(db, normalized)
+    embedding = await db.generate_embedding(normalized)
     if embedding:
         await db.cache_store(prompt_hash, model, embedding, response_body, CACHE_TTL)
         logger.debug("Cached response for model=%s hash=%s", model, prompt_hash[:12])

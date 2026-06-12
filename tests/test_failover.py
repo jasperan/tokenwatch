@@ -3,7 +3,7 @@
 import pytest
 
 from tokenwatch.failover import (
-    get_upstream_url,
+    get_upstream_candidates,
     report_upstream_failure,
     report_upstream_success,
 )
@@ -28,9 +28,9 @@ class StubFailoverDatabase:
 async def test_get_upstream_url_uses_override_before_database_lookup():
     db = StubFailoverDatabase([])
 
-    url = await get_upstream_url(db, "anthropic", override_url="https://override.example")
+    candidates = await get_upstream_candidates(db, "anthropic", override_url="https://override.example")
 
-    assert url == "https://override.example"
+    assert candidates[0] == "https://override.example"
 
 
 @pytest.mark.asyncio
@@ -42,9 +42,9 @@ async def test_get_upstream_url_prefers_first_healthy_upstream():
         ]
     )
 
-    url = await get_upstream_url(db, "anthropic")
+    candidates = await get_upstream_candidates(db, "anthropic")
 
-    assert url == "https://healthy.example"
+    assert candidates[0] == "https://healthy.example"
 
 
 @pytest.mark.asyncio
@@ -56,9 +56,9 @@ async def test_get_upstream_url_falls_back_to_first_when_all_are_unhealthy():
         ]
     )
 
-    url = await get_upstream_url(db, "openai")
+    candidates = await get_upstream_candidates(db, "openai")
 
-    assert url == "https://primary.example"
+    assert candidates[0] == "https://primary.example"
 
 
 @pytest.mark.asyncio

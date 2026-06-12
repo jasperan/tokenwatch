@@ -109,14 +109,16 @@ async def evaluate_ab_test(
     requested_model: str,
     source_app: str,
 ) -> tuple[str, int | None]:
-    """Check if an A/B test applies. Returns (model_to_use, ab_test_id)."""
+    """Check if an A/B test applies. Returns (model_to_use, ab_test_id).
+
+    Only the first active test is applied (single-active-test semantics).
+    """
     tests = await db.get_active_ab_tests()
-    for test in tests:
-        # Deterministic assignment
-        hash_input = f"{request_id}{test.id}"
-        hash_val = int(hashlib.md5(hash_input.encode()).hexdigest(), 16) % 100
-        if hash_val < test.split_pct:
-            return test.model_a, test.id
-        else:
-            return test.model_b, test.id
-    return requested_model, None
+    if not tests:
+        return requested_model, None
+
+    test = tests[0]
+    hash_input = f"{request_id}{test.id}"
+    hash_val = int(hashlib.md5(hash_input.encode()).hexdigest(), 16) % 100
+    model = test.model_a if hash_val < test.split_pct else test.model_b
+    return model, test.id
