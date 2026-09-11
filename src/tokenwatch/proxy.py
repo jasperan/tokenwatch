@@ -6,7 +6,7 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 
 import httpx
 from fastapi import FastAPI, Request, WebSocket
@@ -39,6 +39,29 @@ from .telemetry import init_telemetry, record_request_metrics
 from .ws import ConnectionManager
 
 logger = logging.getLogger("tokenwatch")
+
+# Query parameters whose value is a credential. Clients that authenticate in the query
+# string (?api_key=..., ?token=...) would otherwise have the secret written to this
+# proxy's logs whenever an upstream connect or timeout error occurs.
+_SENSITIVE_QUERY_MARKERS = ("key", "token", "secret", "password", "auth", "signature", "credential")
+
+
+def redact_url(url: str) -> str:
+    """Return *url* with credential-looking query values masked, for safe logging."""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return url
+    if not parts.query:
+        return url
+    pairs = parse_qsl(parts.query, keep_blank_values=True)
+    if not pairs:
+        return url
+    redacted = [
+        (name, "REDACTED" if any(marker in name.lower() for marker in _SENSITIVE_QUERY_MARKERS) else value)
+        for name, value in pairs
+    ]
+    return urlunsplit(parts._replace(query=urlencode(redacted)))
 
 db = Database()
 ws_manager = ConnectionManager()
@@ -380,11 +403,11 @@ async def _proxy_non_streaming(
             break
         except httpx.ConnectError:
             last_error_type = "connect"
-            logger.error("Cannot connect to upstream: %s", url)
+            logger.error("Cannot connect to upstream: %s", redact_url(url))
             await report_upstream_failure(db, api_type, base_url)
         except httpx.TimeoutException:
             last_error_type = "timeout"
-            logger.error("Upstream timeout: %s", url)
+            logger.error("Upstream timeout: %s", redact_url(url))
             await report_upstream_failure(db, api_type, base_url)
 
     if resp is None or selected_base_url is None:
@@ -469,11 +492,11 @@ async def _proxy_streaming(
             break
         except httpx.ConnectError:
             last_error_type = "connect"
-            logger.error("Cannot connect to upstream: %s", url)
+            logger.error("Cannot connect to upstream: %s", redact_url(url))
             await report_upstream_failure(db, api_type, base_url)
         except httpx.TimeoutException:
             last_error_type = "timeout"
-            logger.error("Upstream timeout: %s", url)
+            logger.error("Upstream timeout: %s", redact_url(url))
             await report_upstream_failure(db, api_type, base_url)
 
     if resp is None or selected_base_url is None:
