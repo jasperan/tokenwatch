@@ -6,6 +6,7 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import FastAPI, Request, WebSocket
@@ -188,8 +189,30 @@ def _upstream_error_response(error_type: str) -> Response:
 
 # --- WebSocket endpoint ---
 
+
+def _is_allowed_ws_origin(origin: str) -> bool:
+    """Return True for loopback dashboard origins or non-browser clients.
+
+    Browsers send an Origin header for WebSocket handshakes; CLI clients and tests
+    typically do not, so an absent Origin is allowed.
+    """
+    if not origin:
+        return True
+    try:
+        hostname = urlparse(origin).hostname
+    except ValueError:
+        return False
+    return hostname in {"127.0.0.1", "localhost", "::1"}
+
 @app.websocket("/ws/live")
 async def websocket_live(websocket: WebSocket):
+    # WebSockets are not bound by the same-origin policy, so without this check any
+    # website the user visits could open ws://127.0.0.1:<port>/ws/live and read the
+    # live telemetry stream.
+    if not _is_allowed_ws_origin(websocket.headers.get("origin", "")):
+        await websocket.close(code=1008)
+        return
+
     await ws_manager.connect(websocket)
     try:
         while True:
