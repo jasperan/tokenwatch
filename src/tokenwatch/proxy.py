@@ -506,7 +506,9 @@ async def _proxy_streaming(
                 try:
                     parse_event_fn(buffer, record)
                 except Exception:
-                    pass
+                    # Same failure the per-event handler above logs: a trailing partial
+                    # event must be visible rather than silently dropped.
+                    logger.exception("Failed to parse trailing SSE buffer")
                 yield buffer.encode()
         finally:
             await resp.aclose()
