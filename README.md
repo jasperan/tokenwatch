@@ -7,6 +7,23 @@
 
 **AI token proxy powered by Oracle DB 26ai Free.** Sits between your apps and upstream APIs (Anthropic, OpenAI-compatible), tracking every token, caching semantically similar prompts, enforcing budgets, and routing requests to the right model.
 
+## The traffic observatory
+
+A graphite-and-lime dashboard that brings spend, token activity, and cache savings into focus. Explore model share, inspect time-series points with the keyboard, and follow incoming requests across four responsive views. Charts render locally as SVG without a charting CDN.
+
+![TokenWatch overview with estimated spend, token activity, model mix, and request tables](docs/visuals/dashboard-desktop.png)
+
+<details>
+<summary>Cost intelligence and the mobile dashboard</summary>
+
+![TokenWatch cost intelligence showing forecast, application attribution, and session spending](docs/visuals/cost-intelligence.png)
+
+<img src="docs/visuals/dashboard-mobile.png" width="360" alt="TokenWatch mobile dashboard with stacked metrics, token activity, and model distribution"/>
+
+</details>
+
+Screenshots show the actual dashboard with illustrative local request and metrics fixtures, not production traffic or a live Oracle database.
+
 ## What Is TokenWatch
 
 TokenWatch is a transparent HTTP proxy that intercepts AI API traffic. Point your apps at `localhost:8877` instead of the upstream API, and TokenWatch handles the rest.
@@ -23,7 +40,7 @@ v2 bolts on Oracle AI Vector Search for semantic caching, a budget kill switch, 
 - **A/B testing framework** (split traffic between models, compare cost/latency/quality)
 - **Prompt replay and regression testing** (re-run stored prompts against different models)
 - **Cost attribution and tagging** (tag requests by feature, team, or session for granular cost breakdowns)
-- **Real-time WebSocket dashboard** (4-tab UI with live updates, no polling)
+- **Real-time WebSocket dashboard** (four views, a live request feed, and metrics refreshed every 10 seconds)
 - **OpenTelemetry export** (push traces and metrics to any OTLP-compatible collector)
 - **Multi-provider failover** (automatic retry across upstream endpoints with health tracking)
 
