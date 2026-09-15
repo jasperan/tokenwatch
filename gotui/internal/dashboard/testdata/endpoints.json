@@ -1,0 +1,187 @@
+{
+  "/api/stats?timeframe=24h": {
+    "status_code": 200,
+    "body": {
+      "total_requests": 2,
+      "total_input_tokens": 120,
+      "total_output_tokens": 80,
+      "total_cache_creation_tokens": 10,
+      "total_cache_read_tokens": 5,
+      "total_estimated_cost": 1.25,
+      "total_cache_hits": 1,
+      "total_cache_savings": 0.4,
+      "models": {
+        "claude-sonnet-4-5": {
+          "requests": 2,
+          "input_tokens": 120,
+          "output_tokens": 80,
+          "cost": 1.25
+        }
+      }
+    }
+  },
+  "/api/recent?limit=1": {
+    "status_code": 200,
+    "body": [
+      {
+        "id": 7,
+        "request_id": "req-1",
+        "api_type": "anthropic",
+        "model_requested": "claude-sonnet-4-5",
+        "model_used": "claude-haiku-4-5",
+        "input_tokens": 120,
+        "output_tokens": 80,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 5,
+        "latency_ms": 830,
+        "status_code": 200,
+        "source_app": "claude-code",
+        "session_id": "sess-1",
+        "feature_tag": "chat",
+        "estimated_cost": 0.0125,
+        "cache_hit": 1,
+        "ab_test_id": null,
+        "routing_rule_id": 3,
+        "created_at": "2026-03-28T10:00:00"
+      }
+    ]
+  },
+  "/api/timeseries?timeframe=24h": {
+    "status_code": 200,
+    "body": [
+      {
+        "bucket": "2026-03-28 10:00",
+        "input_tokens": 120,
+        "output_tokens": 80,
+        "requests": 2,
+        "cost": 1.25,
+        "cache_hits": 1
+      }
+    ]
+  },
+  "/api/cost/by-tag?timeframe=24h": {
+    "status_code": 200,
+    "body": [
+      {
+        "tag": "chat",
+        "requests": 2,
+        "total_cost": 1.25,
+        "avg_cost": 0.625,
+        "input_tokens": 120,
+        "output_tokens": 80
+      }
+    ]
+  },
+  "/api/cost/by-app?timeframe=24h": {
+    "status_code": 200,
+    "body": [
+      {
+        "app": "claude-code",
+        "requests": 2,
+        "total_cost": 1.25,
+        "avg_cost": 0.625
+      }
+    ]
+  },
+  "/api/cost/by-session?top=2": {
+    "status_code": 200,
+    "body": [
+      {
+        "session_id": "sess-1",
+        "turns": 3,
+        "conversation_cost": 0.9,
+        "started": "2026-03-28T10:00:00",
+        "ended": "2026-03-28T10:30:00"
+      }
+    ]
+  },
+  "/api/cost/forecast": {
+    "status_code": 200,
+    "body": {
+      "last_7_days_total": 3.5,
+      "daily_avg": 0.5,
+      "monthly_projection": 15.0,
+      "active_days": 7
+    }
+  },
+  "/api/routing/stats": {
+    "status_code": 200,
+    "body": [
+      {
+        "id": 3,
+        "rule_name": "small-prompts",
+        "target_model": "claude-haiku-4-5",
+        "total_requests": 9,
+        "total_cost": 0.11,
+        "avg_latency_ms": 412.5
+      }
+    ]
+  },
+  "/api/cache/stats": {
+    "status_code": 200,
+    "body": {
+      "entries": 4,
+      "total_hits": 2,
+      "active_entries": 4
+    }
+  },
+  "/api/budget/status": {
+    "status_code": 200,
+    "body": [
+      {
+        "id": 1,
+        "scope": "global",
+        "scope_value": "",
+        "limit_amount": 10.0,
+        "period": "daily",
+        "action_on_limit": "block",
+        "webhook_url": "",
+        "is_active": true,
+        "current_spend": 1.25,
+        "utilization_pct": 12.5
+      }
+    ]
+  },
+  "/api/ab/list": {
+    "status_code": 200,
+    "body": [
+      {
+        "id": 3,
+        "test_name": "latency",
+        "model_a": "claude-haiku-4-5",
+        "model_b": "claude-sonnet-4-5",
+        "split_pct": 50,
+        "status": "active"
+      }
+    ]
+  },
+  "/api/ab/report/latency": {
+    "status_code": 200,
+    "body": {
+      "test_name": "latency",
+      "variants": [
+        {
+          "variant": "claude-haiku-4-5",
+          "total_requests": 5,
+          "avg_latency_ms": 400.0,
+          "avg_output_tokens": 90.5,
+          "total_cost": 0.05,
+          "error_rate": 0.0
+        }
+      ]
+    }
+  },
+  "/api/upstreams": {
+    "status_code": 200,
+    "body": [
+      {
+        "id": 2,
+        "api_type": "anthropic",
+        "base_url": "https://api.anthropic.com",
+        "priority": 100,
+        "is_healthy": true,
+        "fail_count": 0
+      }
+    ]
+  }
+}
