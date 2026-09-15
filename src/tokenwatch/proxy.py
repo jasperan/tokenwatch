@@ -6,6 +6,7 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
+from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 
 import httpx
 from fastapi import FastAPI, Request, WebSocket
@@ -38,6 +39,29 @@ from .telemetry import init_telemetry, record_request_metrics
 from .ws import ConnectionManager
 
 logger = logging.getLogger("tokenwatch")
+
+# Query parameters whose value is a credential. Clients that authenticate in the query
+# string (?api_key=..., ?token=...) would otherwise have the secret written to this
+# proxy's logs whenever an upstream connect or timeout error occurs.
+_SENSITIVE_QUERY_MARKERS = ("key", "token", "secret", "password", "auth", "signature", "credential")
+
+
+def redact_url(url: str) -> str:
+    """Return *url* with credential-looking query values masked, for safe logging."""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return url
+    if not parts.query:
+        return url
+    pairs = parse_qsl(parts.query, keep_blank_values=True)
+    if not pairs:
+        return url
+    redacted = [
+        (name, "REDACTED" if any(marker in name.lower() for marker in _SENSITIVE_QUERY_MARKERS) else value)
+        for name, value in pairs
+    ]
+    return urlunsplit(parts._replace(query=urlencode(redacted)))
 
 db = Database()
 ws_manager = ConnectionManager()
@@ -188,8 +212,30 @@ def _upstream_error_response(error_type: str) -> Response:
 
 # --- WebSocket endpoint ---
 
+
+def _is_allowed_ws_origin(origin: str) -> bool:
+    """Return True for loopback dashboard origins or non-browser clients.
+
+    Browsers send an Origin header for WebSocket handshakes; CLI clients and tests
+    typically do not, so an absent Origin is allowed.
+    """
+    if not origin:
+        return True
+    try:
+        hostname = urlparse(origin).hostname
+    except ValueError:
+        return False
+    return hostname in {"127.0.0.1", "localhost", "::1"}
+
 @app.websocket("/ws/live")
 async def websocket_live(websocket: WebSocket):
+    # WebSockets are not bound by the same-origin policy, so without this check any
+    # website the user visits could open ws://127.0.0.1:<port>/ws/live and read the
+    # live telemetry stream.
+    if not _is_allowed_ws_origin(websocket.headers.get("origin", "")):
+        await websocket.close(code=1008)
+        return
+
     await ws_manager.connect(websocket)
     try:
         while True:
@@ -357,11 +403,11 @@ async def _proxy_non_streaming(
             break
         except httpx.ConnectError:
             last_error_type = "connect"
-            logger.error("Cannot connect to upstream: %s", url)
+            logger.error("Cannot connect to upstream: %s", redact_url(url))
             await report_upstream_failure(db, api_type, base_url)
         except httpx.TimeoutException:
             last_error_type = "timeout"
-            logger.error("Upstream timeout: %s", url)
+            logger.error("Upstream timeout: %s", redact_url(url))
             await report_upstream_failure(db, api_type, base_url)
 
     if resp is None or selected_base_url is None:
@@ -446,11 +492,11 @@ async def _proxy_streaming(
             break
         except httpx.ConnectError:
             last_error_type = "connect"
-            logger.error("Cannot connect to upstream: %s", url)
+            logger.error("Cannot connect to upstream: %s", redact_url(url))
             await report_upstream_failure(db, api_type, base_url)
         except httpx.TimeoutException:
             last_error_type = "timeout"
-            logger.error("Upstream timeout: %s", url)
+            logger.error("Upstream timeout: %s", redact_url(url))
             await report_upstream_failure(db, api_type, base_url)
 
     if resp is None or selected_base_url is None:
@@ -483,7 +529,9 @@ async def _proxy_streaming(
                 try:
                     parse_event_fn(buffer, record)
                 except Exception:
-                    pass
+                    # Same failure the per-event handler above logs: a trailing partial
+                    # event must be visible rather than silently dropped.
+                    logger.exception("Failed to parse trailing SSE buffer")
                 yield buffer.encode()
         finally:
             await resp.aclose()

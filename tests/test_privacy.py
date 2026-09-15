@@ -114,3 +114,16 @@ async def test_proxy_stores_redacted_prompt_payloads(monkeypatch):
     assert '[REDACTED]' in stored_request
     assert '[REDACTED_EMAIL]' in stored_request
     assert 'jasper@example.com' not in stored_response
+
+
+def test_redact_url_masks_credential_query_values():
+    """Upstream errors must not write credentials that arrive in the query string."""
+    from tokenwatch.proxy import redact_url
+
+    assert redact_url("https://api.example.com/v1/chat") == "https://api.example.com/v1/chat"
+    assert (
+        redact_url("https://api.example.com/v1/chat?api_key=sk-live-abc&stream=true")
+        == "https://api.example.com/v1/chat?api_key=REDACTED&stream=true"
+    )
+    assert redact_url("https://api.example.com/v1/chat?token=abc") == "https://api.example.com/v1/chat?token=REDACTED"
+    assert redact_url("https://api.example.com/v1/chat?model=gpt&x=1") == "https://api.example.com/v1/chat?model=gpt&x=1"

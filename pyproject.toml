@@ -20,6 +20,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The test configuration below sets asyncio_mode = "auto", which requires
+# pytest-asyncio; without it the async tests silently SKIP rather than run, so the
+# suite appears to pass while 29 cases never execute. Neither pytest nor
+# pytest-asyncio was declared anywhere, so a fresh clone could not run the
+# documented suite at all.
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
 otel = [
     "opentelemetry-api>=1.20",
     "opentelemetry-sdk>=1.20",
