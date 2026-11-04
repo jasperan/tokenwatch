@@ -54,97 +54,105 @@ func viewportWidth(total int) int {
 	return width
 }
 
-// palette derives every colour from the theme, never declaring a literal here.
+// roles are the colours this front-end paints with, as styles.
 //
-// Reading the compiled styles back out of internal/huhstyle keeps one definition
-// of each token: a colour written in this file would instantly diverge from the
-// forms the user is looking at, and would fail
-// scripts/tui-shot/check_palette.py.
-//
-// Only nine tokens are reachable through huh.Styles(), which is what the canonical
-// huhstyle exposes. There is no accessor for the warm success/warning shades, so
-// this front-end never invents one: emphasis is carried by these tokens and the
-// exact meaning is always spelled out in the label text next to the value.
-func palette() (primary, text, subtext, muted, danger, success lipgloss.Style) {
-	styles := huhstyle.Styles()
-	return lipgloss.NewStyle().Foreground(styles.Focused.Title.GetForeground()),
-		lipgloss.NewStyle().Foreground(styles.Focused.Option.GetForeground()),
-		lipgloss.NewStyle().Foreground(styles.Focused.Description.GetForeground()),
-		lipgloss.NewStyle().Foreground(styles.Focused.TextInput.Placeholder.GetForeground()),
-		lipgloss.NewStyle().Foreground(styles.Focused.ErrorMessage.GetForeground()),
-		lipgloss.NewStyle().Foreground(styles.Focused.SelectedOption.GetForeground())
+// They come from internal/huhstyle, so the forms the user is looking at and the
+// panels around them cannot drift apart. The chrome never carries the accent: it
+// is the data that does. A percentage or a dollar figure is not "live", so it
+// stays in the ramp's text role and the bar next to it is the only bright thing
+// on the screen.
+type roles struct {
+	colours                                           huhstyle.Colours
+	accent, series, text, muted, dim, danger, warning lipgloss.Style
 }
 
-// Pane renders a titled panel: rounded border, generous padding, primary title.
+func palette() roles {
+	c := huhstyle.Palette()
+	return roles{
+		colours: c,
+		accent:  lipgloss.NewStyle().Foreground(c.Accent),
+		series:  lipgloss.NewStyle().Foreground(c.Series),
+		text:    lipgloss.NewStyle().Foreground(c.Text),
+		muted:   lipgloss.NewStyle().Foreground(c.Muted),
+		dim:     lipgloss.NewStyle().Foreground(c.Dim),
+		danger:  lipgloss.NewStyle().Foreground(c.Danger),
+		warning: lipgloss.NewStyle().Foreground(c.Warning),
+	}
+}
+
+// Pane renders a titled panel: rounded hairline border, generous padding, and a
+// bold title in the ramp's body colour.
 //
 // Below minPaneTotal the frame is dropped entirely and the content is wrapped
 // instead. A border needs 6 columns of chrome, so at that width a framed pane
 // would either leave no room for text or overflow the terminal and wrap -- the
 // text is what matters, so the decoration goes.
 func Pane(title, body string, width int) string {
-	primary, text, _, _, _, _ := palette()
+	p := palette()
+
+	heading := ""
+	if title != "" {
+		heading = p.text.Bold(true).Render(title) + "\n"
+	}
 
 	if width < minPaneTotal {
 		if width < 1 {
 			width = 1
 		}
-		heading := ""
-		if title != "" {
-			heading = primary.Bold(true).Render(title) + "\n"
-		}
-		return lipgloss.NewStyle().Width(width).Render(heading + text.Render(body))
+		return lipgloss.NewStyle().Width(width).Render(heading + p.text.Render(body))
 	}
 
-	heading := ""
-	if title != "" {
-		heading = primary.Bold(true).Render(title) + "\n"
-	}
+	// The frame is part of the chassis, so it takes the hairline rather than the
+	// terminal's own foreground: an uncoloured border renders in whatever colour
+	// the user's terminal happens to use.
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
+		BorderForeground(p.colours.Edge).
 		Padding(1, 2).
 		Width(width).
-		Render(heading + text.Render(body))
+		Render(heading + p.text.Render(body))
 }
 
 // PaneError renders a failure panel. A failed API call is a normal state in this
 // front-end, not a crash: the user gets the cause and a way onward.
 func PaneError(title string, err error, width int) string {
-	_, _, _, _, danger, _ := palette()
 	message := "unknown error"
 	if err != nil {
 		message = err.Error()
 	}
-	return Pane(title, danger.Render(message), width)
+	return Pane(title, palette().danger.Render(message), width)
 }
 
-// Fog renders low-emphasis text.
+// Fog renders low-emphasis text: a panel's summary line, an empty state.
 func Fog(body string) string {
-	_, _, subtext, _, _, _ := palette()
-	return subtext.Render(body)
+	return palette().muted.Render(body)
 }
 
-// Subtle renders metadata text.
+// Subtle renders the dimmest text: table heads and the empty part of a bar.
 func Subtle(body string) string {
-	_, _, _, muted, _, _ := palette()
-	return muted.Render(body)
+	return palette().dim.Render(body)
 }
 
-// Good renders a healthy/within-budget value.
+// Good renders a healthy value. The accent doubles as the healthy state, the way
+// the web console's lime status dot does: one colour, one meaning.
 func Good(body string) string {
-	_, _, _, _, _, success := palette()
-	return success.Render(body)
+	return palette().accent.Render(body)
 }
 
 // Bad renders a failing/over-budget value.
 func Bad(body string) string {
-	_, _, _, _, danger, _ := palette()
-	return danger.Render(body)
+	return palette().danger.Render(body)
+}
+
+// Warn renders a value that is approaching a limit rather than over it.
+func Warn(body string) string {
+	return palette().warning.Render(body)
 }
 
 // Stat renders one "label: value" line.
 func Stat(label, value string) string {
-	_, text, subtext, _, _, _ := palette()
-	return subtext.Render(label+": ") + text.Render(value)
+	p := palette()
+	return p.muted.Render(label+": ") + p.text.Render(value)
 }
 
 // StatRow renders label/value pairs across one or more lines, so a set of
@@ -163,11 +171,13 @@ func StatRow(pairs [][2]string, width int) string {
 	return out.String()
 }
 
-// Bar renders a proportional bar of the given inner width.
+// barCells converts a ratio into a filled count and the column count it was
+// measured against, so two bars in one row always share the same geometry
+// whatever colour they end up in.
 //
-// Bars are the point of this front-end: spend and traffic are ratios, and a
-// ratio is far easier to read as a length than as a number.
-func Bar(fraction float64, width int) string {
+// It returns the clamped width as well because a caller that kept the original
+// would repeat a negative count when the pane is narrower than its own chrome.
+func barCells(fraction float64, width int) (filled, cols int) {
 	if width < 1 {
 		width = 1
 	}
@@ -177,16 +187,35 @@ func Bar(fraction float64, width int) string {
 	if fraction > 1 {
 		fraction = 1
 	}
-	filled := int(fraction*float64(width) + 0.5)
+	filled = int(fraction*float64(width) + 0.5)
 	if fraction > 0 && filled == 0 {
 		filled = 1
 	}
 	if filled > width {
 		filled = width
 	}
-	_, _, _, _, _, success := palette()
-	return success.Render(strings.Repeat("=", filled)) +
-		Subtle(strings.Repeat(".", width-filled))
+	return filled, width
+}
+
+// Bar renders a proportional bar of the given inner width.
+//
+// Bars are the point of this front-end: spend and traffic are ratios, and a
+// ratio is far easier to read as a length than as a number. They are also the
+// only accented element on a panel, so the reading and the bright thing are the
+// same object.
+func Bar(fraction float64, width int) string {
+	filled, cols := barCells(fraction, width)
+	return palette().accent.Render(strings.Repeat("=", filled)) +
+		Subtle(strings.Repeat(".", cols-filled))
+}
+
+// BarSeries is the second bar of a row: the same geometry in the chart's neutral
+// step, so a row of two series still says which one leads. The web console draws
+// its two series in exactly this pair.
+func BarSeries(fraction float64, width int) string {
+	filled, cols := barCells(fraction, width)
+	return palette().series.Render(strings.Repeat("=", filled)) +
+		Subtle(strings.Repeat(".", cols-filled))
 }
 
 // Money renders a cost with four decimal places, the unit the Python CLI uses.
@@ -211,16 +240,16 @@ func TrimFloat(value float64) string {
 // dropped, then the title itself is truncated. An identity bar that wraps pushes
 // the whole layout down by a line.
 func Header(baseURL, proxyURL string, width int) string {
-	primary, _, subtext, _, _, _ := palette()
+	p := palette()
 	if width < 1 {
 		width = 1
 	}
-	title := primary.Bold(true).Render("TokenWatch") + " " + subtext.Render("Go front-end")
+	title := p.text.Bold(true).Render("TokenWatch") + " " + p.dim.Render("Go front-end")
 	if lipgloss.Width(title) > width {
 		return Truncate(title, width)
 	}
 
-	right := subtext.Render("proxy " + proxyURL)
+	right := p.dim.Render("proxy " + proxyURL)
 	// The gap is at least 2 columns, so both halves need to fit with room spare.
 	if lipgloss.Width(title)+lipgloss.Width(right)+2 > width {
 		return title
@@ -232,14 +261,13 @@ func Header(baseURL, proxyURL string, width int) string {
 
 // Footer is the key-hint bar.
 func Footer(hint string, width int) string {
-	_, _, subtext, _, _, _ := palette()
 	if width < 1 {
 		width = 1
 	}
 	if lipgloss.Width(hint) > width {
 		hint = Truncate(hint, width)
 	}
-	return subtext.Render(hint)
+	return palette().dim.Render(hint)
 }
 
 // Pad right-pads to n columns, ignoring any styling already in s.
@@ -313,7 +341,7 @@ func barColumnFlex(total int, fixedWidths []int, gaps, bars int) int {
 // spaces -- which splits a value from its own label and is far harder to read
 // than a shortened name.
 func Table(headers []string, rows [][]string, widths []int, available int) string {
-	_, text, _, muted, _, _ := palette()
+	p := palette()
 	widths = fitWidths(available, widths)
 
 	var head strings.Builder
@@ -325,7 +353,7 @@ func Table(headers []string, rows [][]string, widths []int, available int) strin
 	}
 
 	var out strings.Builder
-	out.WriteString(muted.Render(head.String()))
+	out.WriteString(p.dim.Render(head.String()))
 	for _, row := range rows {
 		out.WriteString("\n")
 		for i := range headers {
@@ -333,7 +361,7 @@ func Table(headers []string, rows [][]string, widths []int, available int) strin
 			if i < len(row) {
 				cell = row[i]
 			}
-			out.WriteString(text.Render(Pad(Truncate(cell, widths[i]), widths[i])))
+			out.WriteString(p.text.Render(Pad(Truncate(cell, widths[i]), widths[i])))
 			if i < len(headers)-1 {
 				out.WriteString("  ")
 			}

@@ -7,186 +7,213 @@
 <meta name="description" content="A live view of AI traffic, token usage, cache savings, and model costs.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%23bce58b'/%3E%3Cpath d='M8 21h5l3-9 7 17 3-8h6' fill='none' stroke='%23171917' stroke-width='3'/%3E%3C/svg%3E">
 <style>
-  :root { color-scheme: dark; --bg: #141715; --surface: #1d211e; --surface-hover: #272d28; --border: #343c34; --text: #e6ece2; --muted: #9da99b; --accent: #bce58b; --accent-light: #c7eb9e; --accent-dim: #bce58b14; --green: #bce58b; --green-dim: #bce58b16; --red: #e6a09b; --red-dim: #e6a09b14; --yellow: #dbbd80; --yellow-dim: #dbbd8014; }
+  :root {
+    color-scheme: dark;
+    --bg: #141715;
+    --surface: #1a1e1b;
+    --surface-hover: #222723;
+    --border: rgba(232, 237, 228, 0.09);
+    --border-strong: rgba(232, 237, 228, 0.18);
+    --text: #e8ede4;
+    --muted: #a2ab9e;
+    --dim: #7d8679;
+    --accent: #bce58b;
+    --red: #e08d88;
+    --yellow: #d9be86;
+    --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+    --radius-badge: 4px;
+    --radius-control: 8px;
+    --radius-card: 12px;
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Segoe UI', -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100dvh; -webkit-font-smoothing: antialiased; }
-  button { font: inherit; cursor: pointer; transition: color 160ms, background 160ms; }
-  button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+  body { font-family: var(--font-ui); background: var(--bg); color: var(--text); min-height: 100dvh; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; cursor: pointer; transition: color 160ms, background-color 160ms, border-color 160ms; }
+  button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   button:active { transform: translateY(1px); }
   button:disabled { cursor: not-allowed; }
   [hidden] { display: none !important; }
-  .skip-link { position: fixed; left: 16px; top: 10px; padding: 12px 18px; z-index: 50; color: var(--bg); background: var(--accent); transform: translateY(-160%); }
+  .skip-link { position: fixed; left: 16px; top: 12px; padding: 12px 16px; z-index: 50; color: var(--bg); background: var(--accent); border-radius: var(--radius-control); transform: translateY(-160%); }
   .skip-link:focus { transform: translateY(0); }
-  .header { display: flex; align-items: center; gap: 36px; min-height: 82px; padding: 0 max(32px, calc((100vw - 1376px) / 2)); border-bottom: 1px solid var(--border); }
+  .header { display: flex; align-items: center; gap: 32px; min-height: 80px; padding: 0 max(32px, calc((100vw - 1376px) / 2)); border-bottom: 1px solid var(--border); }
   .header-left { display: flex; align-items: center; gap: 12px; }
-  .logo { width: 37px; height: 37px; display: grid; place-items: center; background: var(--accent); color: var(--bg); border-radius: 9px; }
-  .logo svg { width: 27px; fill: none; stroke: currentColor; stroke-width: 2; }
-  .header h1 { font-size: 20px; font-weight: 500; letter-spacing: -.7px; }
+  .logo { width: 36px; height: 36px; display: grid; place-items: center; background: var(--accent); color: var(--bg); border-radius: 8px; }
+  .logo svg { width: 26px; fill: none; stroke: currentColor; stroke-width: 2; }
+  .header h1 { font-size: 18px; font-weight: 500; }
   .header h1 span { color: var(--text); }
-  .header-caption { font-size: 8px; letter-spacing: 1.6px; color: var(--muted); padding-left: 30px; border-left: 1px solid var(--border); }
-  .header-right { margin-left: auto; display: flex; align-items: center; gap: 20px; }
-  .ws-status { display: flex; align-items: center; gap: 7px; font-size: 10px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 4px; }
-  .ws-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--red); }
-  .ws-dot.connected { background: var(--green); }
-  .last-updated { font: 9px ui-monospace, monospace; color: var(--muted); }
+  .header-caption { font-size: 12px; color: var(--dim); padding-left: 24px; border-left: 1px solid var(--border); }
+  .header-right { margin-left: auto; display: flex; align-items: center; gap: 16px; }
+  .ws-status { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius-control); }
+  .ws-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); }
+  .ws-dot.connected { background: var(--accent); }
+  .last-updated { font-family: var(--font-mono); font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
   .tabs { display: flex; gap: 24px; padding: 0 max(32px, calc((100vw - 1376px) / 2)); border-bottom: 1px solid var(--border); overflow-x: auto; }
-  .tab { background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 19px 4px; font-size: 13px; color: var(--muted); white-space: nowrap; }
-  .tab span { font: 8px ui-monospace, monospace; margin-right: 9px; opacity: .7; }
+  .tab { background: transparent; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 20px 4px; font-size: 14px; color: var(--muted); white-space: nowrap; }
   .tab:hover { color: var(--text); }
-  .tab.active { color: var(--accent); border-color: var(--accent); }
-  .main { padding: 38px 32px 16px; max-width: 1440px; margin: auto; }
-  .page-heading { display: flex; justify-content: space-between; align-items: center; gap: 24px; margin-bottom: 34px; }
-  .eyebrow { font: 8px ui-monospace, monospace; letter-spacing: 1.8px; color: var(--accent); }
-  .page-heading h2 { margin: 13px 0 12px; font-size: clamp(27px, 3.2vw, 45px); letter-spacing: -1.7px; font-weight: 450; line-height: 1.2; text-wrap: balance; }
-  .page-heading h2 span { color: #9da994; }
-  .page-heading p:last-child { font-size: 11px; color: var(--muted); line-height: 1.7; }
-  .refresh-note { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 9px; line-height: 1.8; flex-shrink: 0; }
-  .refresh-note strong { font-weight: 400; color: #c8d0c2; }
-  .refresh-symbol { font-size: 26px; border: 1px solid var(--border); border-radius: 50%; width: 40px; height: 40px; display: grid; place-items: center; }
+  .tab.active { color: var(--text); border-color: var(--accent); }
+  .main { padding: 32px 32px 24px; max-width: 1440px; margin: auto; }
+  .page-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; margin-bottom: 32px; }
+  .eyebrow { font-size: 12px; color: var(--dim); }
+  .page-heading h2 { margin: 12px 0; font-size: clamp(26px, 2.6vw, 36px); letter-spacing: -0.02em; font-weight: 500; line-height: 1.15; text-wrap: balance; }
+  .page-heading h2 span { color: var(--muted); }
+  .page-heading p:last-child { font-size: 14px; color: var(--muted); line-height: 1.6; max-width: 72ch; }
+  .refresh-note { display: flex; align-items: flex-end; gap: 12px; color: var(--dim); font-size: 12px; line-height: 1.6; flex-shrink: 0; padding-bottom: 4px; }
+  .refresh-note strong { font-weight: 400; color: var(--muted); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
   .tab-content { display: none; }
   .tab-content.active { display: block; }
-  .controls { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 19px; flex-wrap: wrap; }
-  .section-label { font-size: 8px; font-weight: 500; letter-spacing: 1.3px; color: #c2cbbb; }
-  .section-label span { margin-left: 9px; color: var(--muted); }
-  .timeframe-btns { display: flex; padding: 3px; border: 1px solid var(--border); border-radius: 5px; gap: 2px; background: var(--surface); }
-  .timeframe-btns button { min-width: 44px; padding: 7px 9px; font: 9px ui-monospace, monospace; background: transparent; color: var(--muted); border: 0; border-radius: 3px; }
+  .controls { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+  .section-label { font-size: 12px; font-weight: 500; color: var(--muted); }
+  .section-label span { margin-left: 8px; font-weight: 400; color: var(--dim); }
+  .timeframe-btns { display: flex; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius-control); gap: 2px; background: var(--surface); }
+  .timeframe-btns button { min-width: 44px; padding: 6px 10px; font-family: var(--font-mono); font-size: 12px; background: transparent; color: var(--muted); border: 0; border-radius: var(--radius-badge); }
   .timeframe-btns button:hover { color: var(--text); background: var(--surface-hover); }
-  .timeframe-btns button.active { color: var(--bg); background: var(--accent); }
-  .stats-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; margin-bottom: 25px; background: var(--surface); }
-  .stat-card { padding: 20px 20px 22px; border-right: 1px solid var(--border); min-width: 0; }
-  .stat-card:last-child { border-right: 0; }
-  .stat-label { font-size: 11px; color: var(--muted); margin-bottom: 17px; display: flex; align-items: center; justify-content: space-between; }
-  .stat-value { font-size: clamp(22px, 2.2vw, 32px); font-weight: 450; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
-  .stat-sub { font-size: 10px; line-height: 1.5; color: var(--green); margin-top: 12px; }
-  .stat-sub.muted { color: var(--muted); }
-  .stat-cost { order: -1; background: #293624; border-right: 1px solid #495c37; }
-  .stat-cost .stat-label, .stat-cost .stat-sub { color: #c0d4ae; }
-  .stat-cost .stat-value { color: #d3f2a5; }
-  .charts-row { display: grid; grid-template-columns: 1.85fr 1fr; gap: 20px; margin-bottom: 4px; }
-  .card { min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 7px; padding: 23px; margin-bottom: 20px; }
-  .card-title { display: flex; align-items: center; gap: 16px; justify-content: space-between; font-size: 15px; font-weight: 500; letter-spacing: -.1px; margin-bottom: 19px; }
-  .card-detail { font: 8px ui-monospace, monospace; color: var(--muted); letter-spacing: .8px; font-weight: 400; }
+  .timeframe-btns button.active { color: var(--text); background: var(--surface-hover); box-shadow: inset 0 0 0 1px var(--border-strong); }
+  .stats-grid { display: grid; grid-template-columns: 1.4fr repeat(5, minmax(0, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius-card); overflow: hidden; margin-bottom: 24px; }
+  .stat-card { padding: 20px; background: var(--surface); min-width: 0; }
+  .stat-label { font-size: 12px; color: var(--muted); margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .stat-value { font-family: var(--font-mono); font-size: 20px; font-weight: 500; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+  .stat-sub { font-size: 12px; line-height: 1.5; color: var(--dim); margin-top: 8px; }
+  .stat-cost { order: -1; }
+  .stat-cost .stat-value { font-size: 32px; letter-spacing: -0.02em; color: var(--accent); }
+  .charts-row { display: grid; grid-template-columns: 1.85fr 1fr; gap: 20px; margin-bottom: 0; }
+  .card { min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 24px; margin-bottom: 20px; }
+  .card-title { display: flex; align-items: baseline; gap: 16px; justify-content: space-between; font-size: 14px; font-weight: 500; margin-bottom: 16px; }
+  .card-detail { font-family: var(--font-mono); font-size: 11px; font-weight: 400; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .table-scroll { overflow-x: auto; }
   .chart-container { min-width: 0; width: 100%; }
-  .chart-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 15px; margin-bottom: 20px; }
-  .chart-legend button { border: 0; color: var(--muted); background: transparent; font-size: 9px; display: flex; align-items: center; gap: 6px; padding: 5px 0; }
+  .chart-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-bottom: 16px; }
+  .chart-legend button { border: 0; color: var(--muted); background: transparent; font-size: 12px; display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+  .chart-legend button:hover { color: var(--text); }
   .chart-legend button[aria-pressed=false] { opacity: .5; text-decoration: line-through; }
-  .chart-legend i, .model-legend i { height: 6px; width: 6px; background: var(--accent); border-radius: 2px; flex-shrink: 0; }
-  .chart-legend button:nth-child(2) i { background: #79b5a7; }
-  #chart-readout { font: 8px ui-monospace, monospace; color: var(--muted); margin-left: auto; }
-  #timeChart { min-height: 235px; display: grid; align-items: center; }
+  .chart-legend i, .model-legend i { height: 8px; width: 8px; background: var(--accent); border-radius: 2px; flex-shrink: 0; }
+  .chart-legend button:nth-child(2) i { background: #7f8f7b; }
+  #chart-readout { font-family: var(--font-mono); font-size: 11px; color: var(--dim); margin-left: auto; font-variant-numeric: tabular-nums; }
+  #timeChart { min-height: 240px; display: grid; align-items: center; }
   #timeChart > svg { width: 100%; min-width: 0; overflow: visible; }
-  #timeChart svg text { fill: var(--muted); font: 9px ui-monospace, monospace; }
+  #timeChart svg text { fill: var(--dim); font-family: var(--font-mono); font-size: 11px; }
   .chart-grid { stroke: var(--border); stroke-dasharray: 3 5; fill: none; }
-  .chart-point path { stroke: #788a71; stroke-dasharray: 3 3; opacity: 0; }
+  .chart-point path { stroke: var(--border-strong); stroke-dasharray: 3 3; opacity: 0; }
   .chart-point circle { opacity: 0; }
   .chart-point:hover path, .chart-point:focus path, .chart-point:hover circle, .chart-point:focus circle { opacity: 1; }
   .chart-point:only-of-type circle { opacity: 1; }
-  #modelChart { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 20px; min-height: 269px; }
-  .model-donut { width: 184px; max-width: 100%; }
+  #modelChart { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 24px; min-height: 264px; }
+  .model-donut { width: 176px; max-width: 100%; }
   .model-donut svg { width: 100%; }
-  .donut-total { fill: var(--text); font: 28px 'Segoe UI', sans-serif; letter-spacing: -1px; }
-  .donut-label { fill: var(--muted); font: 7px ui-monospace, monospace; letter-spacing: 1px; }
-  .model-legend { flex: 1; min-width: 135px; list-style: none; }
-  .model-legend button { display: flex; align-items: center; gap: 7px; padding: 9px 0; font-size: 10px; width: 100%; background: transparent; border: 0; text-align: left; }
+  .donut-total { fill: var(--text); font-family: var(--font-mono); font-size: 26px; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+  .donut-label { fill: var(--dim); font-family: var(--font-mono); font-size: 11px; }
+  .model-legend { flex: 1; min-width: 136px; list-style: none; }
+  .model-legend button { display: flex; align-items: center; gap: 8px; padding: 8px 0; font-size: 12px; width: 100%; background: transparent; border: 0; text-align: left; }
   .model-legend button[aria-pressed=false] { opacity: .5; text-decoration: line-through; }
-  .model-legend span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #bdc8b7; max-width: 150px; }
-  .model-legend strong { margin-left: auto; font: 9px ui-monospace, monospace; color: var(--muted); }
-  .chart-empty { min-height: 215px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); text-align: center; width: 100%; }
-  .chart-empty > span { font-size: 38px; color: #81966d; margin-bottom: 15px; }
-  .chart-empty strong { font-size: 12px; font-weight: 400; color: #c2cdb9; }
-  .chart-empty p { font-size: 10px; margin-top: 8px; line-height: 1.7; }
+  .model-legend span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); max-width: 150px; }
+  .model-legend strong { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .chart-empty { min-height: 216px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--dim); text-align: center; width: 100%; }
+  .chart-empty strong { font-size: 13px; font-weight: 500; color: var(--muted); }
+  .chart-empty p { font-size: 12px; line-height: 1.6; }
   table { width: 100%; border-collapse: collapse; text-align: left; white-space: nowrap; }
-  th { font: 8px ui-monospace, monospace; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); padding: 12px 10px; border-bottom: 1px solid var(--border); background: #191e1a; }
-  td { padding: 14px 10px; font-size: 12px; font-variant-numeric: tabular-nums; color: #ced6c8; border-bottom: 1px solid #30382f; }
+  th { font-size: 12px; font-weight: 400; color: var(--dim); padding: 12px; border-bottom: 1px solid var(--border); }
+  td { padding: 12px; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--text); border-bottom: 1px solid var(--border); }
   tr:last-child td { border-bottom: 0; }
-  tr:hover td { background: #bce58b05; }
-  td:nth-child(4), td:nth-child(5), td:nth-child(6), td:nth-child(7) { font-family: ui-monospace, monospace; font-size: 11px; }
-  .badge { display: inline-block; padding: 4px 6px; border: 1px solid var(--border); border-radius: 3px; font-size: 10px; }
-  .badge-anthropic { color: #d0b49a; background: #d0b49a0a; }
-  .badge-openai { color: #b3d99e; background: #b3d99e0a; }
+  tr:hover td { background: rgba(232, 237, 228, 0.03); }
+  td:nth-child(4), td:nth-child(5), td:nth-child(6), td:nth-child(7) { font-family: var(--font-mono); font-size: 12px; }
+  .cell-mono { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .badge { display: inline-block; padding: 2px 6px; border: 1px solid var(--border); border-radius: var(--radius-badge); font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
   .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
   .three-col { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-  .empty-state { padding: 30px 20px; text-align: center; color: var(--muted); }
-  .empty-state-icon { font-size: 28px; color: #829776; margin-bottom: 9px; }
-  .empty-state-text { color: #c2cdb9; font-size: 12px; }
-  .empty-state p { font-size: 10px; margin: 8px auto 0; max-width: 360px; line-height: 1.7; }
-  .table-empty { text-align: center; color: var(--muted); padding: 30px; white-space: normal; line-height: 1.7; }
-  .money { color: var(--accent); }
-  .money-warn, .stat-sub.warn { color: var(--yellow); }
-  .money-bad { color: var(--red); }
+  .empty-state { padding: 32px 24px; text-align: center; color: var(--dim); }
+  .empty-state-text { color: var(--muted); font-size: 13px; }
+  .empty-state p { font-size: 12px; margin: 8px auto 0; max-width: 360px; line-height: 1.6; }
+  .table-empty { text-align: center; color: var(--dim); padding: 32px; white-space: normal; line-height: 1.6; }
+  .money { font-variant-numeric: tabular-nums; }
   .truncate { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .health-dot { width: 6px; height: 6px; display: inline-block; border-radius: 50%; margin-right: 8px; background: var(--red); }
-  .health-dot.healthy { background: var(--green); }
+  .health-dot.healthy { background: var(--accent); }
   #upstreams-container { overflow-x: auto; }
-  #tab-system .stats-grid { border: 0; background: none; gap: 14px; }
-  .gauge { margin: 18px 0; }
-  .gauge-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
-  .gauge-label { font-size: 11px; }
-  .gauge-value { color: var(--muted); font: 9px ui-monospace, monospace; }
-  .gauge-bar { height: 6px; background: #313a2c; border-radius: 2px; overflow: hidden; }
-  .gauge-fill { height: 100%; border-radius: 2px; }
-  .gauge-fill.green { background: var(--green); }
+  .stats-grid-cache { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin-bottom: 0; border: 0; background: none; border-radius: 0; }
+  .stats-grid-cache .stat-card { padding: 0; background: none; }
+  .stats-grid-cache .stat-label { margin-bottom: 8px; }
+  .gauge { margin: 16px 0; }
+  .gauge-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  .gauge-label { font-size: 13px; }
+  .gauge-value { font-family: var(--font-mono); font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .gauge-bar { height: 8px; background: var(--surface-hover); border-radius: 4px; overflow: hidden; }
+  .gauge-fill { height: 100%; border-radius: 4px; }
+  .gauge-fill.green { background: var(--accent); }
   .gauge-fill.yellow { background: var(--yellow); }
   .gauge-fill.red { background: var(--red); }
-  .forecast-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; padding: 25px 0; }
-  .forecast-item { text-align: center; border-right: 1px solid var(--border); }
-  .forecast-item:last-child { border-right: 0; }
-  .forecast-amount { font-size: 35px; letter-spacing: -1.3px; font-variant-numeric: tabular-nums; color: var(--accent); }
-  .forecast-label { margin-top: 12px; font-size: 9px; color: var(--muted); }
-  .ab-card { padding: 20px; background: #242c23; border: 1px solid var(--border); border-radius: 5px; }
-  .ab-header { display: flex; justify-content: space-between; align-items: center; gap: 15px; margin-bottom: 22px; }
-  .ab-name { font-size: 13px; }
-  .ab-status { color: var(--accent); font-size: 9px; border: 1px solid #4a5e3b; padding: 4px 7px; }
-  .ab-models { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 15px; }
-  .ab-model-card { text-align: center; background: #1d251c; border-radius: 5px; padding: 22px; min-width: 0; }
-  .ab-model-name { font-size: 12px; overflow-wrap: anywhere; }
-  .ab-model-pct { color: var(--accent); font-size: 33px; margin: 9px 0; }
-  .ab-vs { font-size: 9px; color: var(--muted); }
-  .rule-condition { font: 10px ui-monospace, monospace; background: var(--accent-dim); border-radius: 3px; padding: 4px 6px; }
-  .replay-placeholder { border: 1px dashed #4a5741; border-radius: 5px; text-align: center; padding: 40px 25px; color: var(--muted); line-height: 1.8; }
-  .connection-notice { padding: 14px 18px; border: 1px solid #705e39; border-radius: 5px; font-size: 11px; color: var(--yellow); background: #dbbd8008; margin-bottom: 24px; line-height: 1.7; }
-  .dashboard-footer { max-width: 1440px; margin: auto; padding: 8px 32px 30px; display: flex; justify-content: space-between; gap: 14px; font: 8px ui-monospace, monospace; color: var(--muted); letter-spacing: .6px; }
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-thumb { background: #4c5945; border-radius: 3px; }
-  @media (max-width: 1100px) { .stat-card { padding: 18px 14px; } .stat-value { font-size: 25px; } .stat-sub { font-size: 8px; } .header-caption { display: none; } .charts-row { grid-template-columns: 1.65fr 1fr; } .model-donut { width: 150px; } .model-legend { min-width: 100%; } }
-  @media (max-width: 850px) { .stats-grid { grid-template-columns: repeat(3, 1fr); } .stat-card { border-bottom: 1px solid var(--border); } .charts-row, .two-col, .three-col { grid-template-columns: 1fr; } .model-legend { min-width: 150px; flex: 0 1 200px; } #modelChart { min-height: 190px; } .refresh-note { display: none; } .page-heading h2 { font-size: 36px; } }
+  .forecast-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; padding: 24px 0; }
+  .forecast-item { border-right: 1px solid var(--border); padding-right: 20px; }
+  .forecast-item:last-child { border-right: 0; padding-right: 0; }
+  .forecast-amount { font-family: var(--font-mono); font-size: 32px; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .forecast-item:first-child .forecast-amount { color: var(--accent); }
+  .forecast-label { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .ab-card { padding: 20px; background: var(--surface-hover); border: 1px solid var(--border); border-radius: var(--radius-control); margin-bottom: 12px; }
+  .ab-card:last-child { margin-bottom: 0; }
+  .ab-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 24px; }
+  .ab-name { font-size: 14px; font-weight: 500; }
+  .ab-status { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+  .ab-models { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; }
+  .ab-model-card { text-align: center; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-control); padding: 24px; min-width: 0; }
+  .ab-model-name { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+  .ab-model-pct { font-family: var(--font-mono); font-size: 28px; letter-spacing: -0.02em; margin: 8px 0; font-variant-numeric: tabular-nums; }
+  .ab-model-tag { font-family: var(--font-mono); font-size: 11px; color: var(--dim); }
+  .ab-vs { font-family: var(--font-mono); font-size: 11px; color: var(--dim); }
+  .rule-condition { font-family: var(--font-mono); font-size: 11px; color: var(--muted); background: var(--surface-hover); border-radius: var(--radius-badge); padding: 2px 6px; }
+  .card-note { border: 1px solid var(--border); border-radius: var(--radius-control); padding: 16px 20px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+  .card-note code { display: block; margin-top: 8px; font-family: var(--font-mono); font-size: 12px; color: var(--text); white-space: normal; overflow-wrap: anywhere; }
+  .connection-notice { padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--radius-control); font-size: 13px; color: var(--yellow); background: var(--surface); margin-bottom: 24px; line-height: 1.6; }
+  .dashboard-footer { max-width: 1440px; margin: auto; padding: 16px 32px 32px; display: flex; justify-content: space-between; gap: 16px; font-size: 12px; color: var(--dim); }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: var(--surface-hover); border-radius: 4px; }
+  @media (max-width: 1100px) {
+    .stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .stat-cost .stat-value { font-size: 28px; }
+    .header-caption { display: none; }
+    .charts-row { grid-template-columns: 1.6fr 1fr; }
+    .model-donut { width: 152px; }
+    .model-legend { min-width: 100%; }
+  }
+  @media (max-width: 850px) {
+    .charts-row, .two-col, .three-col { grid-template-columns: 1fr; }
+    .model-legend { min-width: 152px; flex: 0 1 200px; }
+    #modelChart { min-height: 192px; }
+    .refresh-note { display: none; }
+    .page-heading h2 { font-size: 30px; }
+    .stats-grid-cache { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
   @media (max-width: 580px) {
-    .header { padding: 17px 20px; min-height: 76px; gap: 12px; flex-wrap: wrap; }
-    .header h1 { font-size: 18px; }
+    .header { padding: 16px 20px; min-height: 72px; gap: 12px; flex-wrap: wrap; }
+    .header h1 { font-size: 16px; }
     .header-right { gap: 8px; }
     .last-updated { display: none; }
-    .tabs { gap: 17px; padding: 0 20px; }
-    .tab { font-size: 10px; padding: 16px 0; }
-    .tab span { display: none; }
-    .main { padding: 29px 20px 12px; }
-    .page-heading { margin-bottom: 28px; }
-    .page-heading h2 { font-size: 34px; letter-spacing: -1.3px; line-height: 1.18; }
-    .page-heading h2 span { display: block; }
-    .page-heading p:last-child { font-size: 11px; max-width: 290px; line-height: 1.8; }
-    .section-label { font-size: 8px; }
-    .controls { gap: 13px; }
+    .tabs { gap: 16px; padding: 0 20px; }
+    .tab { font-size: 13px; padding: 16px 0; }
+    .main { padding: 24px 20px 16px; }
+    .page-heading { margin-bottom: 24px; }
+    .page-heading h2 { font-size: 28px; }
+    .page-heading p:last-child { font-size: 13px; max-width: 290px; }
+    .controls { gap: 12px; }
     .timeframe-btns { width: 100%; }
-    .timeframe-btns button { flex: 1; min-height: 34px; }
+    .timeframe-btns button { flex: 1; min-height: 36px; }
     .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .stat-value { font-size: 29px; }
-    .stat-card { padding: 19px; min-height: 121px; }
-    .stat-label { font-size: 10px; margin-bottom: 12px; }
-    .stat-sub { font-size: 9px; }
-    .stat-cost { order: -1; }
-    .card { padding: 19px 16px; }
-    .card-title { font-size: 12px; }
-    .card-detail { font-size: 7px; }
-    #timeChart { min-height: 180px; overflow-x: auto; }
+    .stats-grid-cache { grid-template-columns: 1fr; gap: 16px; }
+    .stat-card { padding: 16px; }
+    .stat-value { font-size: 18px; }
+    .stat-cost .stat-value { font-size: 28px; }
+    .card { padding: 20px 16px; }
+    .card-title { font-size: 13px; }
+    .chart-container { overflow-x: auto; }
+    #timeChart { min-height: 180px; }
     #timeChart > svg { min-width: 480px; }
-    #chart-readout { margin-left: 0; width: 100%; font-size: 8px; line-height: 1.5; }
-    .chart-legend { margin-bottom: 6px; }
-    .forecast-grid { gap: 12px; }
-    .forecast-amount { font-size: 22px; letter-spacing: -.5px; }
-    .forecast-label { font-size: 8px; line-height: 1.7; }
-    .forecast-item { padding-right: 5px; }
-    .ab-card { padding: 15px; }
-    .ab-model-card { padding: 18px 9px; }
-    .dashboard-footer { flex-direction: column; padding: 8px 20px 25px; line-height: 1.7; font-size: 7px; }
+    #chart-readout { margin-left: 0; width: 100%; }
+    .chart-legend { margin-bottom: 8px; }
+    .forecast-grid { grid-template-columns: 1fr; gap: 16px; padding: 8px 0; }
+    .forecast-item { border-right: 0; border-bottom: 1px solid var(--border); padding: 0 0 16px; }
+    .forecast-item:last-child { border-bottom: 0; padding-bottom: 0; }
+    .forecast-amount { font-size: 26px; }
+    .ab-card { padding: 16px; }
+    .ab-model-card { padding: 16px 8px; }
+    .dashboard-footer { flex-direction: column; padding: 16px 20px 24px; line-height: 1.6; }
   }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
@@ -200,7 +227,7 @@
     <div class="logo" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M3 17h6l3-10 7 18 4-8h6"/></svg></div>
     <h1>Token<span>Watch</span></h1>
   </div>
-  <span class="header-caption">AI TRAFFIC OBSERVATORY</span>
+  <span class="header-caption">AI traffic observatory</span>
   <div class="header-right">
     <div class="ws-status" role="status">
       <div class="ws-dot" id="ws-dot"></div>
@@ -212,21 +239,21 @@
 
 <!-- Tabs -->
 <nav class="tabs" aria-label="Dashboard views">
-  <button class="tab active" data-tab="overview" aria-pressed="true"><span>01</span> Overview</button>
-  <button class="tab" data-tab="cost" aria-pressed="false"><span>02</span> Cost intelligence</button>
-  <button class="tab" data-tab="experiments" aria-pressed="false"><span>03</span> Experiments</button>
-  <button class="tab" data-tab="system" aria-pressed="false"><span>04</span> System</button>
+  <button class="tab active" data-tab="overview" aria-pressed="true">Overview</button>
+  <button class="tab" data-tab="cost" aria-pressed="false">Cost intelligence</button>
+  <button class="tab" data-tab="experiments" aria-pressed="false">Experiments</button>
+  <button class="tab" data-tab="system" aria-pressed="false">System</button>
 </nav>
 
 <!-- Main -->
 <main class="main" id="main-content" tabindex="-1">
-  <div class="page-heading"><div><p class="eyebrow" id="page-eyebrow">YOUR USAGE, IN FOCUS</p><h2 id="page-title">Every token. <span>Accounted for.</span></h2><p id="page-description">A clear view of what flows through your models, and what it costs.</p></div><div class="refresh-note"><span class="refresh-symbol" aria-hidden="true">↻</span><span>Metrics refresh<br><strong>every 10 seconds</strong></span></div></div>
+  <div class="page-heading"><div><p class="eyebrow" id="page-eyebrow">Your usage, in focus</p><h2 id="page-title">Every token. <span>Accounted for.</span></h2><p id="page-description">A clear view of what flows through your models, and what it costs.</p></div><div class="refresh-note"><span>Metrics refresh<br><strong>every 10 seconds</strong></span></div></div>
   <div class="connection-notice" id="api-notice" role="status" hidden>Some metrics could not be refreshed. Showing the last available data; retrying automatically.</div>
 
   <!-- ========== OVERVIEW TAB ========== -->
   <div class="tab-content active" id="tab-overview">
     <div class="controls">
-      <div class="section-label">TRAFFIC OVERVIEW <span id="timeframe-label">/ LAST HOUR</span></div>
+      <div class="section-label">Traffic overview <span id="timeframe-label">/ last hour</span></div>
       <div class="timeframe-btns">
         <button class="active" data-tf="1h">1H</button>
         <button data-tf="24h">24H</button>
@@ -240,45 +267,45 @@
       <div class="stat-card">
         <div class="stat-label">Requests</div>
         <div class="stat-value" id="s-requests">0</div>
-        <div class="stat-sub muted">Requests through the proxy</div>
+        <div class="stat-sub">Requests through the proxy</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Input Tokens</div>
+        <div class="stat-label">Input tokens</div>
         <div class="stat-value" id="s-input">0</div>
-        <div class="stat-sub muted">Sent to your models</div>
+        <div class="stat-sub">Sent to your models</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Output Tokens</div>
+        <div class="stat-label">Output tokens</div>
         <div class="stat-value" id="s-output">0</div>
-        <div class="stat-sub muted">Generated in response</div>
+        <div class="stat-sub">Generated in response</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Cache Hits</div>
+        <div class="stat-label">Cache hits</div>
         <div class="stat-value" id="s-cache-hits">0</div>
         <div class="stat-sub" id="s-cache-read"></div>
       </div>
       <div class="stat-card stat-cost">
-        <div class="stat-label">Estimated spend <span aria-hidden="true">↗</span></div>
+        <div class="stat-label">Estimated spend</div>
         <div class="stat-value money" id="s-cost">$0.00</div>
         <div class="stat-sub">Across all tracked models</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Cache Savings</div>
-        <div class="stat-value" id="s-savings" style="color: var(--green)">$0.00</div>
+        <div class="stat-label">Cache savings</div>
+        <div class="stat-value" id="s-savings">$0.00</div>
         <div class="stat-sub" id="s-savings-sub">Saved from cache</div>
       </div>
     </div>
 
     <div class="charts-row">
       <div class="card">
-        <div class="card-title">Token activity <span class="card-detail">INPUT + OUTPUT</span></div>
+        <div class="card-title">Token activity <span class="card-detail">input + output</span></div>
         <div class="chart-legend" aria-label="Token series"><button data-series="input_tokens" aria-pressed="true"><i></i>Input</button><button data-series="output_tokens" aria-pressed="true"><i></i>Output</button><span id="chart-readout">Hover or focus a point to inspect</span></div>
         <div class="chart-container">
           <div id="timeChart"></div>
         </div>
       </div>
       <div class="card">
-        <div class="card-title">Model mix <span class="card-detail">BY TOKENS</span></div>
+        <div class="card-title">Model mix <span class="card-detail">by tokens</span></div>
         <div class="chart-container">
           <div id="modelChart"></div>
         </div>
@@ -286,18 +313,18 @@
     </div>
 
     <div class="card">
-      <div class="card-title">Live request feed <span class="card-detail" id="live-count">0 EVENTS</span></div>
-      <div style="overflow-x: auto;">
+      <div class="card-title">Live request feed <span class="card-detail" id="live-count">0 events</span></div>
+      <div class="table-scroll">
         <table>
           <thead>
             <tr>
               <th>Time</th>
               <th>API</th>
               <th>Model</th>
-              <th>Input</th>
-              <th>Output</th>
-              <th>Latency</th>
-              <th>Cost</th>
+              <th class="num">Input</th>
+              <th class="num">Output</th>
+              <th class="num">Latency</th>
+              <th class="num">Cost</th>
               <th>Source</th>
             </tr>
           </thead>
@@ -305,25 +332,24 @@
         </table>
       </div>
       <div class="empty-state" id="ticker-empty">
-        <div class="empty-state-icon" aria-hidden="true">↳</div>
         <div class="empty-state-text">The next request starts here.</div>
         <p>Live events will appear when an app sends traffic through the proxy.</p>
       </div>
     </div>
 
     <div class="card">
-      <div class="card-title">Recent Requests</div>
-      <div style="overflow-x: auto;">
+      <div class="card-title">Recent requests</div>
+      <div class="table-scroll">
         <table>
           <thead>
             <tr>
               <th>Time</th>
               <th>API</th>
               <th>Model</th>
-              <th>Input</th>
-              <th>Output</th>
-              <th>Latency</th>
-              <th>Cost</th>
+              <th class="num">Input</th>
+              <th class="num">Output</th>
+              <th class="num">Latency</th>
+              <th class="num">Cost</th>
               <th>Source</th>
             </tr>
           </thead>
@@ -347,19 +373,19 @@
 
     <!-- Forecast -->
     <div class="card">
-      <div class="card-title">Cost Forecast</div>
+      <div class="card-title">Cost forecast</div>
       <div class="forecast-grid" id="forecast-grid">
         <div class="forecast-item">
           <div class="forecast-amount" id="f-7d">$0.00</div>
-          <div class="forecast-label">Last 7 Days</div>
+          <div class="forecast-label">Last 7 days</div>
         </div>
         <div class="forecast-item">
           <div class="forecast-amount" id="f-daily">$0.00</div>
-          <div class="forecast-label">Daily Average</div>
+          <div class="forecast-label">Daily average</div>
         </div>
         <div class="forecast-item">
           <div class="forecast-amount" id="f-monthly">$0.00</div>
-          <div class="forecast-label">Monthly Projection</div>
+          <div class="forecast-label">Monthly projection</div>
         </div>
       </div>
     </div>
@@ -367,32 +393,32 @@
     <div class="two-col">
       <!-- Cost by Tag -->
       <div class="card">
-        <div class="card-title">Cost by Tag</div>
-        <div style="overflow-x: auto;">
+        <div class="card-title">Cost by tag</div>
+        <div class="table-scroll">
           <table>
             <thead>
-              <tr><th>Tag</th><th>Requests</th><th>Total Cost</th><th>Avg Cost</th></tr>
+              <tr><th>Tag</th><th class="num">Requests</th><th class="num">Total cost</th><th class="num">Avg cost</th></tr>
             </thead>
             <tbody id="cost-tag-table"></tbody>
           </table>
         </div>
-        <div class="empty-state" id="cost-tag-empty" style="display:none;">
+        <div class="empty-state" id="cost-tag-empty" hidden>
           <div class="empty-state-text">No tagged requests yet</div>
         </div>
       </div>
 
       <!-- Cost by App -->
       <div class="card">
-        <div class="card-title">Cost by App</div>
-        <div style="overflow-x: auto;">
+        <div class="card-title">Cost by app</div>
+        <div class="table-scroll">
           <table>
             <thead>
-              <tr><th>App</th><th>Requests</th><th>Total Cost</th></tr>
+              <tr><th>App</th><th class="num">Requests</th><th class="num">Total cost</th></tr>
             </thead>
             <tbody id="cost-app-table"></tbody>
           </table>
         </div>
-        <div class="empty-state" id="cost-app-empty" style="display:none;">
+        <div class="empty-state" id="cost-app-empty" hidden>
           <div class="empty-state-text">No app data yet</div>
         </div>
       </div>
@@ -400,16 +426,16 @@
 
     <!-- Most Expensive Sessions -->
     <div class="card">
-      <div class="card-title">Most Expensive Sessions</div>
-      <div style="overflow-x: auto;">
+      <div class="card-title">Most expensive sessions</div>
+      <div class="table-scroll">
         <table>
           <thead>
-            <tr><th>Session ID</th><th>Requests</th><th>Cost</th><th>First Request</th><th>Last Request</th></tr>
+            <tr><th>Session ID</th><th class="num">Requests</th><th class="num">Cost</th><th class="num">First request</th><th class="num">Last request</th></tr>
           </thead>
           <tbody id="cost-session-table"></tbody>
         </table>
       </div>
-      <div class="empty-state" id="cost-session-empty" style="display:none;">
+      <div class="empty-state" id="cost-session-empty" hidden>
         <div class="empty-state-text">No session data yet</div>
       </div>
     </div>
@@ -418,22 +444,17 @@
   <!-- ========== EXPERIMENTS TAB ========== -->
   <div class="tab-content" id="tab-experiments">
     <div class="card">
-      <div class="card-title">Active A/B Tests</div>
+      <div class="card-title">Active A/B tests</div>
       <div id="ab-container">
         <div class="empty-state" id="ab-empty">
-          <div class="empty-state-icon">~</div>
           <div class="empty-state-text">No active A/B tests configured</div>
         </div>
       </div>
     </div>
 
-    <div class="card" style="margin-top: 16px;">
-      <div class="card-title">Request Replay</div>
-      <div class="replay-placeholder">
-        <div style="font-size: 1.2rem; margin-bottom: 8px; opacity: 0.6;">Replay Engine</div>
-        <div style="font-size: 0.8rem;">Select a request from Recent Requests to replay it through different models and compare outputs.</div>
-        <div style="margin-top: 12px; font-size: 0.75rem; color: var(--accent-light);">Coming soon</div>
-      </div>
+    <div class="card">
+      <div class="card-title">Request replay</div>
+      <p class="card-note">Replaying stored prompts against a second model runs from the CLI, not this dashboard: <code>tokenwatch replay --from 2026-10-01 --to 2026-10-31 --source-model claude-sonnet-4-5 --target-model claude-haiku-4-5</code></p>
     </div>
   </div>
 
@@ -442,35 +463,35 @@
     <div class="two-col">
       <!-- Upstream Health -->
       <div class="card">
-        <div class="card-title">Upstream Health</div>
+        <div class="card-title">Upstream health</div>
         <div id="upstreams-container">
           <table>
             <thead>
-              <tr><th>Status</th><th>API</th><th>URL</th><th>Priority</th><th>Failures</th></tr>
+              <tr><th>Status</th><th>API</th><th>URL</th><th class="num">Priority</th><th class="num">Failures</th></tr>
             </thead>
             <tbody id="upstreams-table"></tbody>
           </table>
         </div>
-        <div class="empty-state" id="upstreams-empty" style="display:none;">
+        <div class="empty-state" id="upstreams-empty" hidden>
           <div class="empty-state-text">No upstreams configured</div>
         </div>
       </div>
 
       <!-- Cache Stats -->
       <div class="card">
-        <div class="card-title">Cache Stats</div>
-        <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 0;">
-          <div>
-            <div class="stat-label">Total Entries</div>
-            <div class="stat-value" id="cache-total" style="font-size: 1.3rem;">0</div>
+        <div class="card-title">Cache stats</div>
+        <div class="stats-grid stats-grid-cache">
+          <div class="stat-card">
+            <div class="stat-label">Total entries</div>
+            <div class="stat-value" id="cache-total">0</div>
           </div>
-          <div>
-            <div class="stat-label">Active Entries</div>
-            <div class="stat-value" id="cache-active" style="font-size: 1.3rem;">0</div>
+          <div class="stat-card">
+            <div class="stat-label">Active entries</div>
+            <div class="stat-value" id="cache-active">0</div>
           </div>
-          <div>
-            <div class="stat-label">Total Hits</div>
-            <div class="stat-value" id="cache-hits" style="font-size: 1.3rem; color: var(--green);">0</div>
+          <div class="stat-card">
+            <div class="stat-label">Total hits</div>
+            <div class="stat-value" id="cache-hits">0</div>
           </div>
         </div>
       </div>
@@ -478,7 +499,7 @@
 
     <!-- Budget Gauges -->
     <div class="card">
-      <div class="card-title">Budget Status</div>
+      <div class="card-title">Budget status</div>
       <div id="budget-container">
         <div class="empty-state" id="budget-empty">
           <div class="empty-state-text">No budgets configured</div>
@@ -488,23 +509,23 @@
 
     <!-- Routing Rules -->
     <div class="card">
-      <div class="card-title">Active Routing Rules</div>
-      <div style="overflow-x: auto;">
+      <div class="card-title">Active routing rules</div>
+      <div class="table-scroll">
         <table>
           <thead>
-            <tr><th>Rule</th><th>Target Model</th><th>Requests</th><th>Cost</th><th>Avg Latency</th></tr>
+            <tr><th>Rule</th><th>Target model</th><th class="num">Requests</th><th class="num">Cost</th><th class="num">Avg latency</th></tr>
           </thead>
           <tbody id="routing-table"></tbody>
         </table>
       </div>
-      <div class="empty-state" id="routing-empty" style="display:none;">
+      <div class="empty-state" id="routing-empty" hidden>
         <div class="empty-state-text">No routing rules configured</div>
       </div>
     </div>
   </div>
 
 </main>
-<footer class="dashboard-footer"><span>TOKENWATCH / KNOW WHAT YOU SPEND.</span><span>Token tracking · Semantic cache · Cost intelligence</span></footer>
+<footer class="dashboard-footer"><span>TokenWatch · Every token accounted for</span><span>Token tracking · Semantic cache · Cost intelligence</span></footer>
 
 <script>
 /* ================================================================
@@ -548,12 +569,12 @@ function escHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-const chartColors = ['#bce58b', '#79b5a7', '#b7a581', '#9ba6c4', '#bd9690', '#90a26e'];
+const chartColors = ['#bce58b', '#8a9a86', '#6f7d6b', '#586354', '#434d40', '#323a30'];
 const pageCopy = {
-  overview: ['YOUR USAGE, IN FOCUS', 'Every token.', 'Accounted for.', 'A clear view of what flows through your models, and what it costs.'],
-  cost: ['FOLLOW THE SPEND', 'Know the cost.', 'Find the balance.', 'Trace spending across apps, sessions, and tags. Plan what comes next.'],
-  experiments: ['A BETTER WAY TO COMPARE', 'Test a possibility.', 'Measure the difference.', 'Review model splits and active experiments in one place.'],
-  system: ['BEHIND EVERY REQUEST', 'A working system.', 'In plain sight.', 'Check upstream health, cache activity, routing rules, and budget limits.'],
+  overview: ['Your usage, in focus', 'Every token.', 'Accounted for.', 'A clear view of what flows through your models, and what it costs.'],
+  cost: ['Follow the spend', 'Know the cost.', 'Find the balance.', 'Trace spending across apps, sessions, and tags. Plan what comes next.'],
+  experiments: ['A better way to compare', 'Test a possibility.', 'Measure the difference.', 'Review model splits and active experiments in one place.'],
+  system: ['Behind every request', 'A working system.', 'In plain sight.', 'Check upstream health, cache activity, routing rules, and budget limits.'],
 };
 
 // ---- Tab Navigation ----
@@ -582,7 +603,7 @@ document.querySelectorAll('#tab-overview .timeframe-btns button').forEach(btn =>
     document.querySelector('#tab-overview .timeframe-btns .active').classList.remove('active');
     btn.classList.add('active');
     currentTimeframe = btn.dataset.tf;
-    document.getElementById('timeframe-label').textContent = '/ ' + ({ '1h': 'LAST HOUR', '24h': 'LAST 24 HOURS', '7d': 'LAST 7 DAYS', '30d': 'LAST 30 DAYS', all: 'ALL TIME' })[currentTimeframe];
+    document.getElementById('timeframe-label').textContent = '/ ' + ({ '1h': 'last hour', '24h': 'last 24 hours', '7d': 'last 7 days', '30d': 'last 30 days', all: 'all time' })[currentTimeframe];
     refreshOverview();
   });
 });
@@ -607,7 +628,7 @@ function tokenCount(value) {
 function renderTimeChart() {
   const container = document.getElementById('timeChart');
   if (!timeSeries.length) {
-    container.innerHTML = '<div class="chart-empty"><span>∿</span><strong>No activity in this window.</strong><p>Token usage will appear as requests arrive.</p></div>';
+    container.innerHTML = '<div class="chart-empty"><strong>No activity in this window</strong><p>Token usage will appear as requests arrive.</p></div>';
     document.getElementById('chart-readout').textContent = 'No data for this timeframe';
     return;
   }
@@ -627,12 +648,12 @@ function renderTimeChart() {
   }).join('');
   const lines = series.map(key => {
     const points = timeSeries.map((row, index) => `${x(index)},${y(row[key])}`).join(' ');
-    const color = key === 'input_tokens' ? '#bce58b' : '#79b5a7';
+    const color = key === 'input_tokens' ? '#bce58b' : '#7f8f7b';
     return `<polygon points="50,192 ${points} ${x(timeSeries.length - 1)},192" fill="${color}" opacity=".055"/><polyline points="${points}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
   }).join('');
   const points = timeSeries.map((row, index) => {
     const title = `${row.bucket}: ${fmt(row.input_tokens)} input / ${fmt(row.output_tokens)} output`;
-    return `<g class="chart-point" tabindex="0" role="img" aria-label="${escHtml(title)}" data-point="${index}"><title>${escHtml(title)}</title><rect x="${x(index) - 8}" y="24" width="16" height="170" fill="transparent"/><path d="M${x(index)} 24V192"/>${series.map(key => `<circle cx="${x(index)}" cy="${y(row[key])}" r="3.5" fill="${key === 'input_tokens' ? '#bce58b' : '#79b5a7'}"/>`).join('')}</g>`;
+    return `<g class="chart-point" tabindex="0" role="img" aria-label="${escHtml(title)}" data-point="${index}"><title>${escHtml(title)}</title><rect x="${x(index) - 8}" y="24" width="16" height="170" fill="transparent"/><path d="M${x(index)} 24V192"/>${series.map(key => `<circle cx="${x(index)}" cy="${y(row[key])}" r="3.5" fill="${key === 'input_tokens' ? '#bce58b' : '#7f8f7b'}"/>`).join('')}</g>`;
   }).join('');
   container.innerHTML = `<svg viewBox="0 0 740 235" aria-label="Input and output token activity" role="group"><title>Token activity across ${timeSeries.length} time buckets</title>${ticks}${labels}${lines}${points}</svg>`;
   container.querySelectorAll('[data-point]').forEach(point => {
@@ -657,7 +678,7 @@ function renderModelChart(models) {
   const total = entries.reduce((sum, [name, value]) => sum + (hiddenModels.has(name) ? 0 : value), 0);
   const container = document.getElementById('modelChart');
   if (!entries.some(([, value]) => value > 0)) {
-    container.innerHTML = '<div class="chart-empty"><span>◌</span><strong>Your models, in perspective.</strong><p>Model share appears once tokens are recorded.</p></div>';
+    container.innerHTML = '<div class="chart-empty"><strong>Your models, in perspective</strong><p>Model share appears once tokens are recorded.</p></div>';
     return;
   }
   let offset = 0;
@@ -668,7 +689,7 @@ function renderModelChart(models) {
     offset += percent;
     return segment;
   }).join('');
-  container.innerHTML = `<div class="model-donut"><svg viewBox="0 0 190 190" role="img" aria-label="Model share of ${fmt(total)} visible tokens">${segments}<text x="95" y="94" text-anchor="middle" class="donut-total">${fmt(total)}</text><text x="95" y="114" text-anchor="middle" class="donut-label">VISIBLE TOKENS</text></svg></div><ul class="model-legend">${entries.map(([name, value], index) => `<li><button data-model="${index}" aria-pressed="${!hiddenModels.has(name)}"><i style="background:${chartColors[index % chartColors.length]}"></i><span title="${escHtml(name)}">${escHtml(name)}</span><strong>${total && !hiddenModels.has(name) ? (value / total * 100).toFixed(1) + '%' : '—'}</strong></button></li>`).join('')}</ul>`;
+  container.innerHTML = `<div class="model-donut"><svg viewBox="0 0 190 190" role="img" aria-label="Model share of ${fmt(total)} visible tokens">${segments}<text x="95" y="94" text-anchor="middle" class="donut-total">${fmt(total)}</text><text x="95" y="114" text-anchor="middle" class="donut-label">total</text></svg></div><ul class="model-legend">${entries.map(([name, value], index) => `<li><button data-model="${index}" aria-pressed="${!hiddenModels.has(name)}"><i style="background:${chartColors[index % chartColors.length]}"></i><span title="${escHtml(name)}">${escHtml(name)}</span><strong>${total && !hiddenModels.has(name) ? (value / total * 100).toFixed(1) + '%' : '—'}</strong></button></li>`).join('')}</ul>`;
   container.querySelectorAll('[data-model]').forEach(button => {
     button.addEventListener('click', () => {
       const index = Number(button.dataset.model);
@@ -730,12 +751,12 @@ function renderRecentTable(rows) {
   const tbody = document.getElementById('recent-table');
   tbody.innerHTML = rows.length ? rows.map(r => `<tr>
     <td>${timeAgo(r.created_at)}</td>
-    <td><span class="badge badge-${escHtml(r.api_type)}">${escHtml(r.api_type)}</span></td>
+    <td><span class="badge">${escHtml(r.api_type)}</span></td>
     <td>${escHtml(r.model)}</td>
-    <td>${fmt(r.input_tokens)}</td>
-    <td>${fmt(r.output_tokens)}</td>
-    <td>${r.latency_ms != null ? r.latency_ms + 'ms' : '-'}</td>
-    <td class="money">${r.estimated_cost != null ? money(r.estimated_cost) : '-'}</td>
+    <td class="num">${fmt(r.input_tokens)}</td>
+    <td class="num">${fmt(r.output_tokens)}</td>
+    <td class="num">${r.latency_ms != null ? r.latency_ms + 'ms' : '-'}</td>
+    <td class="num money">${r.estimated_cost != null ? money(r.estimated_cost) : '-'}</td>
     <td class="truncate" title="${escHtml(r.source_app)}">${escHtml((r.source_app || '').slice(0, 30))}</td>
   </tr>`).join('') : '<tr><td colspan="8" class="table-empty">No requests in history yet. Connect an app to start tracking.</td></tr>';
 }
@@ -761,54 +782,54 @@ async function refreshCost() {
   const tagTbody = document.getElementById('cost-tag-table');
   const tagEmpty = document.getElementById('cost-tag-empty');
   if (byTag && byTag.length > 0) {
-    tagEmpty.style.display = 'none';
-    tagTbody.parentElement.style.display = '';
+    tagEmpty.hidden = true;
+    tagTbody.parentElement.hidden = false;
     tagTbody.innerHTML = byTag.map(r => {
       const avg = r.requests > 0 ? r.total_cost / r.requests : 0;
       return `<tr>
         <td>${escHtml(r.feature_tag || 'untagged')}</td>
-        <td>${fmt(r.requests)}</td>
-        <td class="money">${money(r.total_cost)}</td>
-        <td class="money">${money(avg)}</td>
+        <td class="num">${fmt(r.requests)}</td>
+        <td class="num money">${money(r.total_cost)}</td>
+        <td class="num money">${money(avg)}</td>
       </tr>`;
     }).join('');
   } else {
-    tagTbody.parentElement.style.display = 'none';
-    tagEmpty.style.display = '';
+    tagTbody.parentElement.hidden = true;
+    tagEmpty.hidden = false;
   }
 
   // Cost by App
   const appTbody = document.getElementById('cost-app-table');
   const appEmpty = document.getElementById('cost-app-empty');
   if (byApp && byApp.length > 0) {
-    appEmpty.style.display = 'none';
-    appTbody.parentElement.style.display = '';
+    appEmpty.hidden = true;
+    appTbody.parentElement.hidden = false;
     appTbody.innerHTML = byApp.map(r => `<tr>
       <td>${escHtml(r.source_app || 'unknown')}</td>
-      <td>${fmt(r.requests)}</td>
-      <td class="money">${money(r.total_cost)}</td>
+      <td class="num">${fmt(r.requests)}</td>
+      <td class="num money">${money(r.total_cost)}</td>
     </tr>`).join('');
   } else {
-    appTbody.parentElement.style.display = 'none';
-    appEmpty.style.display = '';
+    appTbody.parentElement.hidden = true;
+    appEmpty.hidden = false;
   }
 
   // Sessions
   const sessTbody = document.getElementById('cost-session-table');
   const sessEmpty = document.getElementById('cost-session-empty');
   if (bySess && bySess.length > 0) {
-    sessEmpty.style.display = 'none';
-    sessTbody.parentElement.style.display = '';
+    sessEmpty.hidden = true;
+    sessTbody.parentElement.hidden = false;
     sessTbody.innerHTML = bySess.map(r => `<tr>
       <td class="truncate" title="${escHtml(r.session_id)}">${escHtml((r.session_id || '').slice(0, 24))}</td>
-      <td>${fmt(r.requests)}</td>
-      <td class="money">${money(r.conversation_cost)}</td>
-      <td>${timeAgo(r.first_request)}</td>
-      <td>${timeAgo(r.last_request)}</td>
+      <td class="num">${fmt(r.requests)}</td>
+      <td class="num money">${money(r.conversation_cost)}</td>
+      <td class="num">${timeAgo(r.first_request)}</td>
+      <td class="num">${timeAgo(r.last_request)}</td>
     </tr>`).join('');
   } else {
-    sessTbody.parentElement.style.display = 'none';
-    sessEmpty.style.display = '';
+    sessTbody.parentElement.hidden = true;
+    sessEmpty.hidden = false;
   }
 }
 
@@ -820,12 +841,12 @@ async function refreshExperiments() {
   const empty = document.getElementById('ab-empty');
 
   if (tests && tests.length > 0) {
-    empty.style.display = 'none';
+    empty.hidden = true;
     const cards = tests.map(t => {
       const pctA = t.split_pct || 50;
       const pctB = 100 - pctA;
       return `
-        <div class="ab-card" style="margin-bottom: 12px;">
+        <div class="ab-card">
           <div class="ab-header">
             <div class="ab-name">${escHtml(t.test_name)}</div>
             <div class="ab-status">${escHtml(t.status)}</div>
@@ -834,13 +855,13 @@ async function refreshExperiments() {
             <div class="ab-model-card">
               <div class="ab-model-name">${escHtml(t.model_a)}</div>
               <div class="ab-model-pct">${pctA}%</div>
-              <div style="font-size: 0.7rem; color: var(--muted); margin-top: 2px;">Model A</div>
+              <div class="ab-model-tag">model a</div>
             </div>
-            <div class="ab-vs">VS</div>
+            <div class="ab-vs">vs</div>
             <div class="ab-model-card">
               <div class="ab-model-name">${escHtml(t.model_b)}</div>
               <div class="ab-model-pct">${pctB}%</div>
-              <div style="font-size: 0.7rem; color: var(--muted); margin-top: 2px;">Model B</div>
+              <div class="ab-model-tag">model b</div>
             </div>
           </div>
         </div>
@@ -851,7 +872,7 @@ async function refreshExperiments() {
     existingCards.forEach(c => c.remove());
     container.insertAdjacentHTML('beforeend', cards);
   } else {
-    empty.style.display = '';
+    empty.hidden = false;
     const existingCards = container.querySelectorAll('.ab-card');
     existingCards.forEach(c => c.remove());
   }
@@ -871,18 +892,18 @@ async function refreshSystem() {
   const upTbody = document.getElementById('upstreams-table');
   const upEmpty = document.getElementById('upstreams-empty');
   if (upstreams && upstreams.length > 0) {
-    upEmpty.style.display = 'none';
-    upTbody.parentElement.parentElement.style.display = '';
+    upEmpty.hidden = true;
+    upTbody.parentElement.parentElement.hidden = false;
     upTbody.innerHTML = upstreams.map(u => `<tr>
       <td><span class="health-dot ${u.is_healthy ? 'healthy' : 'unhealthy'}"></span>${u.is_healthy ? 'Healthy' : 'Down'}</td>
-      <td><span class="badge badge-${escHtml(u.api_type)}">${escHtml(u.api_type)}</span></td>
-      <td style="font-family: monospace; font-size: 0.78rem;">${escHtml(u.base_url)}</td>
-      <td>${u.priority}</td>
-      <td>${u.fail_count || 0}</td>
+      <td><span class="badge">${escHtml(u.api_type)}</span></td>
+      <td class="cell-mono">${escHtml(u.base_url)}</td>
+      <td class="num">${u.priority}</td>
+      <td class="num">${u.fail_count || 0}</td>
     </tr>`).join('');
   } else {
-    upTbody.parentElement.parentElement.style.display = 'none';
-    upEmpty.style.display = '';
+    upTbody.parentElement.parentElement.hidden = true;
+    upEmpty.hidden = false;
   }
 
   // Cache
@@ -896,7 +917,7 @@ async function refreshSystem() {
   const budgetContainer = document.getElementById('budget-container');
   const budgetEmpty = document.getElementById('budget-empty');
   if (budgets && budgets.length > 0) {
-    budgetEmpty.style.display = 'none';
+    budgetEmpty.hidden = true;
     const gaugesHtml = budgets.map(b => {
       const pct = Math.min(b.utilization_pct || 0, 100);
       let colorClass = 'green';
@@ -920,7 +941,7 @@ async function refreshSystem() {
     oldGauges.forEach(g => g.remove());
     budgetContainer.insertAdjacentHTML('beforeend', gaugesHtml);
   } else {
-    budgetEmpty.style.display = '';
+    budgetEmpty.hidden = false;
     const oldGauges = budgetContainer.querySelectorAll('.gauge');
     oldGauges.forEach(g => g.remove());
   }
@@ -929,18 +950,18 @@ async function refreshSystem() {
   const routeTbody = document.getElementById('routing-table');
   const routeEmpty = document.getElementById('routing-empty');
   if (routing && routing.length > 0) {
-    routeEmpty.style.display = 'none';
-    routeTbody.parentElement.style.display = '';
+    routeEmpty.hidden = true;
+    routeTbody.parentElement.hidden = false;
     routeTbody.innerHTML = routing.map(r => `<tr>
       <td>${escHtml(r.rule_name)}</td>
       <td><span class="rule-condition">${escHtml(r.target_model)}</span></td>
-      <td>${fmt(r.total_requests)}</td>
-      <td class="money">${money(r.total_cost)}</td>
-      <td>${r.avg_latency_ms != null ? r.avg_latency_ms + 'ms' : '-'}</td>
+      <td class="num">${fmt(r.total_requests)}</td>
+      <td class="num money">${money(r.total_cost)}</td>
+      <td class="num">${r.avg_latency_ms != null ? r.avg_latency_ms + 'ms' : '-'}</td>
     </tr>`).join('');
   } else {
-    routeTbody.parentElement.style.display = 'none';
-    routeEmpty.style.display = '';
+    routeTbody.parentElement.hidden = true;
+    routeEmpty.hidden = false;
   }
 }
 
@@ -1024,23 +1045,23 @@ function addLiveEvent(data) {
 function renderLiveTicker() {
   const tbody = document.getElementById('live-ticker');
   const empty = document.getElementById('ticker-empty');
-  document.getElementById('live-count').textContent = liveEvents.length + ' EVENTS';
+  document.getElementById('live-count').textContent = liveEvents.length + ' events';
 
   if (liveEvents.length === 0) {
-    empty.style.display = '';
+    empty.hidden = false;
     tbody.innerHTML = '';
     return;
   }
 
-  empty.style.display = 'none';
-  tbody.innerHTML = liveEvents.map((r, i) => `<tr class="${i === 0 ? 'ticker-row' : ''}">
+  empty.hidden = true;
+  tbody.innerHTML = liveEvents.map((r) => `<tr>
     <td>${timeAgo(r.created_at || new Date().toISOString())}</td>
-    <td><span class="badge badge-${escHtml(r.api_type || '')}">${escHtml(r.api_type || '-')}</span></td>
+    <td><span class="badge">${escHtml(r.api_type || '-')}</span></td>
     <td>${escHtml(r.model || '-')}</td>
-    <td>${fmt(r.input_tokens)}</td>
-    <td>${fmt(r.output_tokens)}</td>
-    <td>${r.latency_ms != null ? r.latency_ms + 'ms' : '-'}</td>
-    <td class="money">${r.estimated_cost != null ? money(r.estimated_cost) : '-'}</td>
+    <td class="num">${fmt(r.input_tokens)}</td>
+    <td class="num">${fmt(r.output_tokens)}</td>
+    <td class="num">${r.latency_ms != null ? r.latency_ms + 'ms' : '-'}</td>
+    <td class="num money">${r.estimated_cost != null ? money(r.estimated_cost) : '-'}</td>
     <td class="truncate" title="${escHtml(r.source_app || '')}">${escHtml((r.source_app || '').slice(0, 30))}</td>
   </tr>`).join('');
 }
