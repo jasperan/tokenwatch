@@ -929,7 +929,7 @@ func (m *Model) viewTimeseries() string {
 		rows = append(rows, []string{
 			Truncate(bucket.Bucket, 17),
 			Count(bucket.Requests),
-			Bar(reqShare, barWidth),
+			BarSeries(reqShare, barWidth),
 			Bar(costShare, barWidth),
 			"$" + Money(bucket.Cost),
 			Count(bucket.CacheHits),
@@ -1096,7 +1096,7 @@ func (m *Model) viewBudget() string {
 			label = Bad(label)
 		} else if budget.UtilizationPct >= 80 {
 			status = "near limit"
-			label = Fog(label)
+			label = Warn(label)
 		}
 		active := "yes"
 		if !budget.IsActive {
@@ -1115,7 +1115,7 @@ func (m *Model) viewBudget() string {
 		})
 	}
 	table := Table(
-		[]string{"scope", "period", "action", "limit", "spent", "used", "state", "on", "utilisation"},
+		[]string{"scope", "period", "action", "limit", "spent", "used", "state", "on", "share"},
 		rows,
 		[]int{22, 7, 7, 12, 12, 8, 10, 4, barWidth},
 		m.tableWidth(),
