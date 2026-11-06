@@ -61,3 +61,22 @@ def test_is_streaming_detects_valid_and_invalid_payloads():
     assert _is_streaming(b'{"stream": true}') is True
     assert _is_streaming(b'{"stream": false}') is False
     assert _is_streaming(b"not-json") is False
+
+
+def test_redact_url_masks_credential_query_values():
+    from tokenwatch.proxy import redact_url
+
+    out = redact_url("https://h.example/v1/m?api_key=SECRET123&stream=false&Token=abc")
+    assert "SECRET123" not in out and "abc" not in out
+    assert "stream=false" in out
+    assert redact_url("https://h.example/v1/m") == "https://h.example/v1/m"
+
+
+def test_ws_origin_allowlist():
+    from tokenwatch.proxy import _is_allowed_ws_origin
+
+    assert _is_allowed_ws_origin("")
+    assert _is_allowed_ws_origin("http://127.0.0.1:8878")
+    assert _is_allowed_ws_origin("http://localhost:8877")
+    assert not _is_allowed_ws_origin("https://evil.example")
+    assert not _is_allowed_ws_origin("http://127.0.0.1.evil.example")
